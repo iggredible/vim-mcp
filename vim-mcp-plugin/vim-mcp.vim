@@ -1,13 +1,10 @@
-" vim-mcp.vim - Simple MCP integration for Vim
+" vim-mcp.vim - MCP integration for Vim (Unix socket client)
 " Requires Vim 8+ with +channel or Neovim
 
-echo 'HEYYYY'
 if exists('g:loaded_vim_mcp')
   finish
 endif
 let g:loaded_vim_mcp = 1
-
-echo 'LOADEDDDD'
 
 " Configuration
 let g:vim_mcp_enabled = get(g:, 'vim_mcp_enabled', 1)
@@ -17,10 +14,11 @@ endif
 
 " Global variables
 let s:instance_id = ''
-let s:socket_path = ''
-let s:state_path = ''
-let s:server = v:null
-let s:registry_path = '/tmp/vim-mcp-registry.json'
+let s:channel = v:null
+let s:connected = 0
+let s:connection_timer = v:null
+let s:mcp_socket_path = get(g:, 'vim_mcp_socket_path', '/tmp/vim-mcp-server.sock')
+let s:reconnect_interval = get(g:, 'vim_mcp_reconnect_interval', 5000)
 
 " Generate instance ID
 function! s:GenerateInstanceID()
@@ -41,218 +39,289 @@ endfunction
 
 " Get current Vim state
 function! s:GetVimState()
+  echom 'vim-mcp: Starting GetVimState()'
   let l:state = {}
 
-  " Current buffer info
-  let l:current_buf = {}
-  let l:current_buf.id = bufnr('%')
-  let l:current_buf.name = expand('%:p')
-  let l:current_buf.filetype = &filetype
-  let l:current_buf.line_count = line('$')
-  let l:current_buf.modified = &modified
-  let l:current_buf.content = getline(1, '$')
-  let l:state.current_buffer = l:current_buf
+  try
+    " Current buffer info (minimal)
+    echom 'vim-mcp: Getting current buffer info'
+    let l:current_buf = {}
+    let l:current_buf.id = bufnr('%')
+    let l:current_buf.name = expand('%:p')
+    let l:current_buf.filetype = &filetype
+    let l:current_buf.line_count = line('$')
+    let l:current_buf.modified = &modified
+    " Skip content for now to avoid timeouts
+    let l:current_buf.content = []
+    let l:state.current_buffer = l:current_buf
+    echom 'vim-mcp: Current buffer info done'
 
-  " All buffers
-  let l:buffers = []
-  for l:bufnr in range(1, bufnr('$'))
-    if buflisted(l:bufnr)
-      let l:buf = {}
-      let l:buf.id = l:bufnr
-      let l:buf.name = bufname(l:bufnr)
-      let l:buf.modified = getbufvar(l:bufnr, '&modified')
-      let l:buf.loaded = bufloaded(l:bufnr)
-      call add(l:buffers, l:buf)
-    endif
-  endfor
-  let l:state.buffers = l:buffers
+    " All buffers (minimal)
+    echom 'vim-mcp: Getting buffer list'
+    let l:buffers = []
+    for l:bufnr in range(1, bufnr('$'))
+      if buflisted(l:bufnr)
+        let l:buf = {}
+        let l:buf.id = l:bufnr
+        let l:buf.name = bufname(l:bufnr)
+        let l:buf.modified = getbufvar(l:bufnr, '&modified')
+        let l:buf.loaded = bufloaded(l:bufnr)
+        call add(l:buffers, l:buf)
+      endif
+    endfor
+    let l:state.buffers = l:buffers
+    echom 'vim-mcp: Buffer list done, found ' . len(l:buffers) . ' buffers'
 
-  " Windows
-  let l:windows = []
-  for l:winnr in range(1, winnr('$'))
-    let l:win = {}
-    let l:win.id = l:winnr
-    let l:win.buffer_id = winbufnr(l:winnr)
-    let l:win.width = winwidth(l:winnr)
-    let l:win.height = winheight(l:winnr)
-    call add(l:windows, l:win)
-  endfor
-  let l:state.windows = l:windows
+    " Windows
+    echom 'vim-mcp: Getting window info'
+    let l:windows = []
+    for l:winnr in range(1, winnr('$'))
+      let l:win = {}
+      let l:win.id = l:winnr
+      let l:win.buffer_id = winbufnr(l:winnr)
+      let l:win.width = winwidth(l:winnr)
+      let l:win.height = winheight(l:winnr)
+      call add(l:windows, l:win)
+    endfor
+    let l:state.windows = l:windows
+    echom 'vim-mcp: Window info done, found ' . len(l:windows) . ' windows'
 
-  " Cursor position
-  let l:state.cursor = getcurpos()[1:2]  " [line, column]
+    " Basic info only
+    let l:state.cursor = getcurpos()[1:2]
+    let l:state.mode = mode()
+    let l:state.cwd = getcwd()
 
-  " Current mode
-  let l:state.mode = mode()
-
-  " Working directory
-  let l:state.cwd = getcwd()
-
-  " Visual selection if in visual mode
-  if mode() =~# '[vV]'
-    let [l:start_line, l:start_col] = getpos("'<")[1:2]
-    let [l:end_line, l:end_col] = getpos("'>")[1:2]
-    let l:state.selection = {
-          \ 'start': [l:start_line, l:start_col],
-          \ 'end': [l:end_line, l:end_col],
-          \ 'text': getline(l:start_line, l:end_line)
-          \ }
-  endif
-
-  return l:state
+    echom 'vim-mcp: GetVimState() completed successfully'
+    return l:state
+  catch
+    echom 'vim-mcp: Error in GetVimState(): ' . v:exception
+    return {'error': 'Failed to get state: ' . v:exception}
+  endtry
 endfunction
 
 " Handle incoming messages from MCP server
 function! s:HandleMessage(channel, msg)
   try
-    let l:request = json_decode(a:msg)
-    let l:response = {'id': get(l:request, 'id', 0)}
+    echom 'vim-mcp: Received message: ' . a:msg[:100] . '...'
 
-    if l:request.method == 'get_state'
-      let l:response.result = s:GetVimState()
-    else
-      let l:response.error = {'code': -32601, 'message': 'Method not found'}
+    " Parse JSON message
+    let l:message = json_decode(a:msg)
+
+    " Handle different message types
+    if has_key(l:message, 'type')
+      if l:message.type == 'registered'
+        echom 'vim-mcp: Registered with server as ' . l:message.instance_id
+        let s:connected = 1
+      endif
+    elseif has_key(l:message, 'method')
+      echom 'vim-mcp: Processing method: ' . l:message.method
+      " Handle RPC-style requests
+      let l:response = {'id': get(l:message, 'id', 0)}
+
+      if l:message.method == 'get_state'
+        echom 'vim-mcp: Getting Vim state...'
+        let l:response.result = s:GetVimState()
+        echom 'vim-mcp: State retrieved, sending response'
+      else
+        let l:response.error = {'code': -32601, 'message': 'Method not found'}
+      endif
+
+      " Send response back
+      call s:SendMessage(l:response)
+      echom 'vim-mcp: Response sent'
     endif
-
-    call ch_sendraw(a:channel, json_encode(l:response) . "\n")
   catch
+    echom 'vim-mcp: Error handling message: ' . v:exception
     echohl ErrorMsg | echo 'vim-mcp: Error handling message: ' . v:exception | echohl None
   endtry
 endfunction
 
-" Update registry
-function! s:UpdateRegistry()
-  let l:registry = {}
-
-  " Load existing registry
-  if filereadable(s:registry_path)
+" Send message to MCP server
+function! s:SendMessage(msg)
+  if s:channel != v:null && ch_status(s:channel) == 'open'
     try
-      let l:registry = json_decode(readfile(s:registry_path)[0])
+      call ch_sendraw(s:channel, json_encode(a:msg) . "\n")
     catch
-      " Registry is corrupted, start fresh
+      echohl ErrorMsg | echo 'vim-mcp: Error sending message: ' . v:exception | echohl None
     endtry
   endif
+endfunction
 
-  " Update our entry
-  let l:info = {}
-  let l:info.socket = s:socket_path
-  let l:info.pid = getpid()
-  let l:info.cwd = getcwd()
-  let l:info.main_file = expand('%:p')
-  let l:info.started = strftime('%Y-%m-%dT%H:%M:%S')
+" Handle channel close
+function! s:HandleClose(channel)
+  echom 'vim-mcp: Disconnected from server'
+  let s:connected = 0
+  let s:channel = v:null
 
-  " Get buffer list
+  " Start persistent retry timer
+  call s:StartConnectionTimer()
+endfunction
+
+" Connect to MCP server
+function! s:Connect()
+  if s:channel != v:null && ch_status(s:channel) == 'open'
+    return  " Already connected
+  endif
+
+  " Generate instance ID if not set
+  if empty(s:instance_id)
+    let s:instance_id = s:GenerateInstanceID()
+  endif
+
+  try
+    " Connect to Unix socket server
+    let l:address = 'unix:' . s:mcp_socket_path
+    let s:channel = ch_open(l:address, {
+          \ 'mode': 'raw',
+          \ 'callback': function('s:HandleMessage'),
+          \ 'close_cb': function('s:HandleClose')
+          \ })
+
+    if ch_status(s:channel) == 'open'
+      " Connection successful - clear any retry timer
+      call s:StopConnectionTimer()
+
+      " Send registration message
+      let l:register_msg = {
+            \ 'type': 'register',
+            \ 'instance_id': s:instance_id,
+            \ 'info': {
+            \   'pid': getpid(),
+            \   'cwd': getcwd(),
+            \   'main_file': expand('%:p'),
+            \   'buffers': s:GetBufferList(),
+            \   'version': v:version
+            \ }
+            \ }
+      call s:SendMessage(l:register_msg)
+      echom 'vim-mcp: Connected to server at ' . s:mcp_socket_path
+    else
+      throw 'Failed to connect - channel not open'
+    endif
+  catch
+    let s:channel = v:null
+    let s:connected = 0
+
+    " Show error but don't spam if already retrying
+    if s:connection_timer == v:null
+      echom 'vim-mcp: MCP server not available, will retry every ' . (s:reconnect_interval / 1000) . 's'
+    endif
+
+    " Start persistent retry timer
+    call s:StartConnectionTimer()
+  endtry
+endfunction
+
+" Start connection retry timer
+function! s:StartConnectionTimer()
+  if s:connection_timer != v:null
+    return  " Timer already running
+  endif
+
+  if has('timers')
+    let s:connection_timer = timer_start(s:reconnect_interval, function('s:AttemptReconnect'), {'repeat': -1})
+  endif
+endfunction
+
+" Stop connection retry timer
+function! s:StopConnectionTimer()
+  if s:connection_timer != v:null && has('timers')
+    call timer_stop(s:connection_timer)
+    let s:connection_timer = v:null
+  endif
+endfunction
+
+" Attempt reconnection (called by timer)
+function! s:AttemptReconnect(timer)
+  if s:connected
+    " Already connected, stop timer
+    call s:StopConnectionTimer()
+    return
+  endif
+
+  " Try to connect (silently this time)
+  try
+    let l:address = 'unix:' . s:mcp_socket_path
+    let s:channel = ch_open(l:address, {
+          \ 'mode': 'raw',
+          \ 'callback': function('s:HandleMessage'),
+          \ 'close_cb': function('s:HandleClose')
+          \ })
+
+    if ch_status(s:channel) == 'open'
+      " Connection successful!
+      call s:StopConnectionTimer()
+
+      " Send registration message
+      let l:register_msg = {
+            \ 'type': 'register',
+            \ 'instance_id': s:instance_id,
+            \ 'info': {
+            \   'pid': getpid(),
+            \   'cwd': getcwd(),
+            \   'main_file': expand('%:p'),
+            \   'buffers': s:GetBufferList(),
+            \   'version': v:version
+            \ }
+            \ }
+      call s:SendMessage(l:register_msg)
+      echom 'vim-mcp: Successfully connected to MCP server'
+    else
+      let s:channel = v:null
+    endif
+  catch
+    let s:channel = v:null
+    " Continue retrying silently
+  endtry
+endfunction
+
+" Get list of buffer names
+function! s:GetBufferList()
   let l:buffers = []
   for l:bufnr in range(1, bufnr('$'))
     if buflisted(l:bufnr)
       call add(l:buffers, bufname(l:bufnr))
     endif
   endfor
-  let l:info.buffers = l:buffers
-  let l:info.last_seen = strftime('%Y-%m-%dT%H:%M:%S')
-
-  let l:registry[s:instance_id] = l:info
-
-  " Write registry
-  call writefile([json_encode(l:registry)], s:registry_path)
+  return l:buffers
 endfunction
 
-" Write current state to file
-function! s:WriteStateFile()
-  if empty(s:state_path)
-    return
+" Send state update to server
+function! s:SendStateUpdate()
+  if s:connected
+    let l:msg = {
+          \ 'type': 'state_update',
+          \ 'state': s:GetVimState()
+          \ }
+    call s:SendMessage(l:msg)
   endif
-  
-  try
-    let l:state = s:GetVimState()
-    call writefile([json_encode(l:state)], s:state_path)
-  catch
-    " Ignore errors during state writing
-  endtry
 endfunction
 
-" Remove from registry
-function! s:RemoveFromRegistry()
-  if !filereadable(s:registry_path)
-    return
+" Disconnect from server
+function! s:Disconnect()
+  if s:channel != v:null
+    try
+      call ch_close(s:channel)
+    catch
+      " Ignore errors during close
+    endtry
+    let s:channel = v:null
+    let s:connected = 0
   endif
-
-  try
-    let l:registry = json_decode(readfile(s:registry_path)[0])
-    if has_key(l:registry, s:instance_id)
-      unlet l:registry[s:instance_id]
-      call writefile([json_encode(l:registry)], s:registry_path)
-    endif
-  catch
-    " Ignore errors during cleanup
-  endtry
-endfunction
-
-" Start the MCP socket server
-function! s:StartServer()
-  if s:server != v:null
-    return
-  endif
-
-  let s:instance_id = s:GenerateInstanceID()
-  let s:socket_path = '/tmp/vim-mcp-' . s:instance_id . '.sock'
-  let s:state_path = '/tmp/vim-mcp-' . s:instance_id . '-state.json'
-
-  " Remove old socket if it exists
-  if filereadable(s:socket_path)
-    call delete(s:socket_path)
-  endif
-
-  try
-    " Use file-based communication instead of sockets
-    call s:UpdateRegistry()
-    call s:WriteStateFile()
-    echom 'vim-mcp: Started with ID ' . s:instance_id
-    
-    " Update state and registry periodically
-    if has('timers')
-      call timer_start(30000, {-> s:UpdateRegistry()}, {'repeat': -1})
-      call timer_start(1000, {-> s:WriteStateFile()}, {'repeat': -1})
-    endif
-    
-    " Set server as active
-    let s:server = 1
-  catch
-    echohl ErrorMsg | echo 'vim-mcp: Error: ' . v:exception | echohl None
-  endtry
-endfunction
-
-" Stop the server
-function! s:StopServer()
-  if s:server != v:null && s:server != 0
-    " If we had a real channel, we'd close it here
-    " call ch_close(s:server)
-    let s:server = v:null
-  endif
-
-  " Remove socket and state files
-  if !empty(s:socket_path) && filereadable(s:socket_path)
-    call delete(s:socket_path)
-  endif
-  if !empty(s:state_path) && filereadable(s:state_path)
-    call delete(s:state_path)
-  endif
-
-  " Remove from registry
-  call s:RemoveFromRegistry()
 endfunction
 
 " Commands
-command! VimMCPStart call s:StartServer()
-command! VimMCPStop call s:StopServer()
-command! VimMCPRestart call s:StopServer() | call s:StartServer()
-command! VimMCPStatus echo 'vim-mcp: ' . (s:server != v:null && s:server != 0 ? 'Running with ID ' . s:instance_id : 'Not running')
+command! VimMCPConnect call s:Connect()
+command! VimMCPDisconnect call s:Disconnect()
+command! VimMCPReconnect call s:Disconnect() | call s:Connect()
+command! VimMCPStatus echo 'vim-mcp: ' . (s:connected ? 'Connected to server as ' . s:instance_id : 'Not connected')
+command! VimMCPTestState echo json_encode(s:GetVimState())
 
-" Auto-start on Vim startup
+" Auto-connect on Vim startup
 augroup vim_mcp
   autocmd!
-  autocmd VimEnter * call s:StartServer()
-  autocmd VimLeavePre * call s:StopServer()
-  " Update registry when buffers change
-  autocmd BufAdd,BufDelete * call s:UpdateRegistry()
+  autocmd VimEnter * call s:Connect()
+  autocmd VimLeavePre * call s:Disconnect()
+  " Send state updates on certain events
+  autocmd BufEnter,BufWrite,WinEnter * call s:SendStateUpdate()
 augroup END

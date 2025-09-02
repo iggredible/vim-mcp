@@ -3,9 +3,11 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import net from 'net';
 import fs from 'fs';
 import path from 'path';
 
+const SOCKET_PATH = '/tmp/vim-mcp-server.sock';
 const REGISTRY_PATH = '/tmp/vim-mcp-registry.json';
 const PREFERENCE_PATH = '/tmp/vim-mcp-preference.txt';
 
@@ -22,6 +24,8 @@ class VimMCPServer {
     });
 
     this.selectedInstance = null;
+    this.vimConnections = new Map(); // Map of instanceId -> {socket, state}
+    this.unixServer = null;
     this.setupHandlers();
   }
 
@@ -35,6 +39,25 @@ class VimMCPServer {
       console.error('Error loading registry:', error);
     }
     return {};
+  }
+
+  saveRegistry() {
+    try {
+      const registry = {};
+      for (const [instanceId, conn] of this.vimConnections.entries()) {
+        registry[instanceId] = conn.info || {
+          pid: conn.pid,
+          cwd: conn.cwd,
+          main_file: conn.main_file,
+          buffers: conn.buffers,
+          started: conn.started,
+          last_seen: new Date().toISOString()
+        };
+      }
+      fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2));
+    } catch (error) {
+      console.error('Error saving registry:', error);
+    }
   }
 
   loadPreference() {
@@ -56,41 +79,173 @@ class VimMCPServer {
     }
   }
 
-  validateInstances(registry) {
-    const valid = {};
-    for (const [id, info] of Object.entries(registry)) {
-      try {
-        // Check if process is still running
-        process.kill(info.pid, 0);
-        valid[id] = info;
-      } catch {
-        // Process doesn't exist, skip this instance
+  validateInstances() {
+    const valid = new Map();
+    for (const [id, conn] of this.vimConnections.entries()) {
+      if (conn.socket && !conn.socket.destroyed) {
+        valid.set(id, conn);
+      } else {
+        this.vimConnections.delete(id);
       }
     }
+    this.vimConnections = valid;
+    
+    // Clean registry to only contain currently connected instances
+    this.saveRegistry();
+    
     return valid;
   }
 
-  async getVimState(instanceId) {
-    const registry = this.loadRegistry();
-    const instance = registry[instanceId];
-
-    if (!instance) {
-      throw new Error(`Instance ${instanceId} not found`);
+  async requestVimState(instanceId) {
+    const conn = this.vimConnections.get(instanceId);
+    if (!conn || !conn.socket || conn.socket.destroyed) {
+      throw new Error(`Instance ${instanceId} not connected`);
     }
 
-    // Read state from file instead of socket
-    const statePath = `/tmp/vim-mcp-${instanceId}-state.json`;
-    
-    try {
-      if (!fs.existsSync(statePath)) {
-        throw new Error(`State file not found: ${statePath}`);
+    return new Promise((resolve, reject) => {
+      const requestId = Date.now();
+      const request = JSON.stringify({
+        id: requestId,
+        method: 'get_state',
+        params: {}
+      }) + '\n';
+
+      // Set up one-time listener for this specific request
+      const responseHandler = (data) => {
+        try {
+          const lines = data.toString().split('\n');
+          for (const line of lines) {
+            if (line.trim()) {
+              const response = JSON.parse(line);
+              if (response.id === requestId) {
+                conn.socket.removeListener('data', responseHandler);
+                if (response.error) {
+                  reject(new Error(response.error.message));
+                } else {
+                  // Cache the state
+                  conn.state = response.result;
+                  resolve(response.result);
+                }
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing response:', e);
+        }
+      };
+
+      conn.socket.on('data', responseHandler);
+      conn.socket.write(request);
+
+      // Timeout after 2 seconds
+      setTimeout(() => {
+        conn.socket.removeListener('data', responseHandler);
+        reject(new Error('Timeout waiting for Vim response'));
+      }, 2000);
+    });
+  }
+
+  startUnixServer() {
+    // Clean up existing socket file
+    if (fs.existsSync(SOCKET_PATH)) {
+      fs.unlinkSync(SOCKET_PATH);
+    }
+
+    this.unixServer = net.createServer((socket) => {
+      let buffer = '';
+      let instanceId = null;
+
+      console.error('New Vim connection via Unix socket');
+
+      socket.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const message = JSON.parse(line);
+
+              // Handle registration message
+              if (message.type === 'register') {
+                instanceId = message.instance_id;
+                this.vimConnections.set(instanceId, {
+                  socket: socket,
+                  info: message.info,
+                  state: null,
+                  pid: message.info.pid,
+                  cwd: message.info.cwd,
+                  main_file: message.info.main_file,
+                  buffers: message.info.buffers || [],
+                  started: new Date().toISOString()
+                });
+
+                console.error(`Vim instance registered: ${instanceId}`);
+                this.saveRegistry();
+
+                // Send acknowledgment
+                socket.write(JSON.stringify({
+                  type: 'registered',
+                  instance_id: instanceId
+                }) + '\n');
+
+                // Auto-select if only one instance
+                if (this.vimConnections.size === 1) {
+                  this.selectedInstance = instanceId;
+                  this.savePreference(instanceId);
+                  console.error(`Auto-selected single Vim instance: ${instanceId}`);
+                }
+              }
+              // Handle state updates
+              else if (message.type === 'state_update' && instanceId) {
+                const conn = this.vimConnections.get(instanceId);
+                if (conn) {
+                  conn.state = message.state;
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing message from Vim:', e);
+            }
+          }
+        }
+      });
+
+      socket.on('close', () => {
+        if (instanceId) {
+          console.error(`Vim instance disconnected: ${instanceId}`);
+          this.vimConnections.delete(instanceId);
+          this.saveRegistry();
+
+          // Clear selection if this was the selected instance
+          if (this.selectedInstance === instanceId) {
+            this.selectedInstance = null;
+          }
+        }
+      });
+
+      socket.on('error', (err) => {
+        console.error('Socket error:', err);
+      });
+    });
+
+    this.unixServer.listen(SOCKET_PATH, () => {
+      console.error(`Unix socket server listening at ${SOCKET_PATH}`);
+      // Set socket permissions to user-only
+      fs.chmodSync(SOCKET_PATH, 0o600);
+    });
+
+    this.unixServer.on('error', (err) => {
+      console.error('Unix socket server error:', err);
+      if (err.code === 'EADDRINUSE') {
+        console.error('Socket file already exists. Cleaning up and retrying...');
+        if (fs.existsSync(SOCKET_PATH)) {
+          fs.unlinkSync(SOCKET_PATH);
+        }
+        setTimeout(() => this.startUnixServer(), 1000);
       }
-      
-      const stateData = fs.readFileSync(statePath, 'utf8');
-      return JSON.parse(stateData);
-    } catch (error) {
-      throw new Error(`Failed to read Vim state: ${error.message}`);
-    }
+    });
   }
 
   setupHandlers() {
@@ -130,12 +285,22 @@ class VimMCPServer {
       const uri = request.params.uri;
 
       if (uri === 'vim://instances') {
-        const registry = this.validateInstances(this.loadRegistry());
+        this.validateInstances();
+        const instances = {};
+        for (const [id, conn] of this.vimConnections.entries()) {
+          instances[id] = {
+            pid: conn.pid,
+            cwd: conn.cwd,
+            main_file: conn.main_file,
+            buffers: conn.buffers,
+            connected: true
+          };
+        }
         return {
           contents: [{
             uri: uri,
             mimeType: 'application/json',
-            text: JSON.stringify(registry, null, 2)
+            text: JSON.stringify(instances, null, 2)
           }]
         };
       }
@@ -146,7 +311,7 @@ class VimMCPServer {
 
       if (uri === 'vim://state' || uri === 'vim://buffers') {
         try {
-          const state = await this.getVimState(this.selectedInstance);
+          const state = await this.requestVimState(this.selectedInstance);
 
           if (uri === 'vim://buffers') {
             return {
@@ -178,44 +343,68 @@ class VimMCPServer {
       const { name, arguments: args } = request.params;
 
       if (name === 'list_vim_instances') {
-        const registry = this.validateInstances(this.loadRegistry());
-        const instances = Object.entries(registry).map(([id, info]) => ({
-          id: id,
-          pid: info.pid,
-          cwd: info.cwd,
-          main_file: info.main_file || 'unnamed',
-          buffers: info.buffers || []
-        }));
+        this.validateInstances();
+        const instances = [];
+        for (const [id, conn] of this.vimConnections.entries()) {
+          instances.push({
+            id: id,
+            pid: conn.pid,
+            cwd: conn.cwd,
+            main_file: conn.main_file || 'unnamed',
+            buffers: conn.buffers || []
+          });
+        }
+
+        if (instances.length === 0) {
+          return {
+            content: [{
+              type: 'text',
+              text: 'No Vim instances connected. Please open Vim with the vim-mcp plugin loaded, or run :VimMCPReconnect in existing Vim instances.'
+            }]
+          };
+        }
+
+        // If multiple instances, show selection prompt
+        if (instances.length > 1 && !this.selectedInstance) {
+          const instanceList = instances.map(i => 
+            `- ${i.id} (PID: ${i.pid})\n  File: ${i.main_file}\n  CWD: ${i.cwd}`
+          ).join('\n');
+          
+          return {
+            content: [{
+              type: 'text',
+              text: `Found ${instances.length} Vim instance(s):\n${instanceList}\n\nPlease select an instance using select_vim_instance tool with instance_id parameter.`
+            }]
+          };
+        }
 
         return {
           content: [{
             type: 'text',
-            text: instances.length === 0
-              ? 'No Vim instances found. Please open Vim with the vim-mcp plugin loaded.'
-              : `Found ${instances.length} Vim instance(s):\n${instances.map(i =>
-                  `- ${i.id} (PID: ${i.pid})\n  File: ${i.main_file}\n  CWD: ${i.cwd}`
-                ).join('\n')}`
+            text: `Found ${instances.length} Vim instance(s):\n${instances.map(i =>
+                `- ${i.id} (PID: ${i.pid})\n  File: ${i.main_file}\n  CWD: ${i.cwd}`
+              ).join('\n')}`
           }]
         };
       }
 
       if (name === 'select_vim_instance') {
         const instanceId = args.instance_id;
-        const registry = this.validateInstances(this.loadRegistry());
+        this.validateInstances();
 
-        if (!registry[instanceId]) {
-          const available = Object.keys(registry);
+        if (!this.vimConnections.has(instanceId)) {
+          const available = Array.from(this.vimConnections.keys());
           throw new Error(`Instance '${instanceId}' not found. Available instances: ${available.join(', ') || 'none'}`);
         }
 
         this.selectedInstance = instanceId;
         this.savePreference(instanceId);
 
-        const info = registry[instanceId];
+        const conn = this.vimConnections.get(instanceId);
         return {
           content: [{
             type: 'text',
-            text: `Connected to Vim instance: ${instanceId}\nFile: ${info.main_file || 'unnamed'}\nCWD: ${info.cwd}`
+            text: `Connected to Vim instance: ${instanceId}\nFile: ${conn.main_file || 'unnamed'}\nCWD: ${conn.cwd}`
           }]
         };
       }
@@ -226,7 +415,7 @@ class VimMCPServer {
         }
 
         try {
-          const state = await this.getVimState(this.selectedInstance);
+          const state = await this.requestVimState(this.selectedInstance);
           return {
             content: [{
               type: 'text',
@@ -281,23 +470,21 @@ class VimMCPServer {
   }
 
   async start() {
-    // Auto-select instance if there's only one
-    const registry = this.validateInstances(this.loadRegistry());
-    const instances = Object.keys(registry);
+    // Start Unix socket server for Vim connections
+    this.startUnixServer();
 
-    if (instances.length === 1) {
-      this.selectedInstance = instances[0];
-      this.savePreference(instances[0]);
-      console.error(`Auto-selected single Vim instance: ${instances[0]}`);
-    } else if (instances.length > 1) {
-      // Try to use preference
-      const pref = this.loadPreference();
-      if (pref && registry[pref]) {
-        this.selectedInstance = pref;
-        console.error(`Using preferred Vim instance: ${pref}`);
+    // Clean up socket on exit
+    const cleanup = () => {
+      if (fs.existsSync(SOCKET_PATH)) {
+        fs.unlinkSync(SOCKET_PATH);
       }
-    }
+    };
 
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+    process.on('exit', cleanup);
+
+    // Start MCP server
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('Vim MCP Server started');

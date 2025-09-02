@@ -48,10 +48,10 @@ Registry          | Instance tracking                       | JSON file
 ### 2.2 Communication Topology
 
 ```
-Claude Code <--[MCP/stdio]--> vim-mcp-server <--[File I/O]--> Vim instances
-                                    |                           |
-                                    v                           v
-                              [Registry File]            [State Files]
+Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
+                                    |
+                                    v
+                              [Registry File]
 ```
 
 ## 3. Protocols
@@ -64,32 +64,63 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[File I/O]--> Vim instances
 
 ### 3.2 Vim Protocol (vim-mcp-server ↔ Vim)
 
-**Transport**: File-based communication  
-**Encoding**: JSON files  
-**State File Pattern**: `/tmp/vim-mcp-{instance_id}-state.json`
+**Transport**: Unix domain sockets (server-client)  
+**Socket Path**: `/tmp/vim-mcp-server.sock` (configurable)  
+**Encoding**: JSON messages, newline-delimited
 
-#### 3.2.1 File Format
+#### 3.2.1 Message Types
 
-##### Registry File (Vim → Server)
-Vim updates the registry file with instance information.
-
-##### State File (Vim → Server)
-Vim continuously writes current state to JSON file:
+##### Registration Message (Vim → Server)
 ```json
 {
-  "current_buffer": {
-    "id": "number",
-    "name": "string",
-    "filetype": "string",
-    "content": ["string"],
-    "line_count": "number",
-    "modified": "boolean"
-  },
-  "windows": ["object"],
-  "buffers": ["object"],
-  "cursor": ["number"],
-  "mode": "string",
-  "cwd": "string"
+  "type": "register",
+  "instance_id": "string",
+  "info": {
+    "pid": "number",
+    "cwd": "string",
+    "main_file": "string",
+    "buffers": ["string"],
+    "version": "string"
+  }
+}
+```
+
+##### Registration Acknowledgment (Server → Vim)
+```json
+{
+  "type": "registered",
+  "instance_id": "string"
+}
+```
+
+##### State Request (Server → Vim)
+```json
+{
+  "id": "number",
+  "method": "get_state",
+  "params": {}
+}
+```
+
+##### State Response (Vim → Server)
+```json
+{
+  "id": "number",
+  "result": {
+    "current_buffer": {
+      "id": "number",
+      "name": "string",
+      "filetype": "string",
+      "content": ["string"],
+      "line_count": "number",
+      "modified": "boolean"
+    },
+    "windows": ["object"],
+    "buffers": ["object"],
+    "cursor": ["number"],
+    "mode": "string",
+    "cwd": "string"
+  }
 }
 ```
 
@@ -98,12 +129,13 @@ Vim continuously writes current state to JSON file:
 ### 4.1 Instance Registry
 
 **Location**: `/tmp/vim-mcp-registry.json`  
-**Format**: JSON object with instance_id keys
+**Format**: JSON object with instance_id keys  
+**Note**: Registry is automatically cleaned to contain only currently connected instances
 
 ```json
 {
   "{instance_id}": {
-    "socket": "string (legacy, unused)",
+    "socket": "string (legacy, unused - all instances use /tmp/vim-mcp-server.sock)",
     "pid": "number",
     "cwd": "string (working directory)",
     "main_file": "string (primary file path)",
@@ -163,7 +195,7 @@ Vim continuously writes current state to JSON file:
 
 | Tool | Parameters | Description | Availability |
 |------|-----------|-------------|--------------|
-| `list_vim_instances` | none | List all available instances | Always |
+| `list_vim_instances` | none | List all connected instances with selection prompt | Always |
 | `select_vim_instance` | instance_id: string | Connect to specific instance | Always |
 
 #### Vim Interaction Tools
@@ -183,44 +215,48 @@ Vim continuously writes current state to JSON file:
 ```
 START
   │
-  ├─> Load registry
-  ├─> Validate instances (check PIDs)
-  ├─> Count valid instances
+  ├─> Validate active connections (check socket status)
+  ├─> Count active instances
   │
   ├─> IF instances == 0:
-  │     └─> WAIT for connection
+  │     └─> Return "No instances found, run :VimMCPReconnect in Vim"
   │
   ├─> IF instances == 1:
   │     └─> AUTO-CONNECT to single instance
   │
   └─> IF instances > 1:
-        ├─> Check preference file
-        ├─> IF preference valid:
-        │     └─> CONNECT to preferred instance
+        ├─> IF no instance selected:
+        │     └─> PROMPT for selection with instance list
         └─> ELSE:
-              └─> PROMPT for selection
+              └─> Use current selection
 ```
+
+**Key Changes from v1.0**:
+- Registry is cleaned automatically to only contain connected instances
+- Selection algorithm prioritizes active socket connections over registry entries
+- Improved user messaging for reconnection instructions
 
 ### 7.2 Connection Lifecycle
 
 #### 7.2.1 Server Startup
 1. Claude Code launches vim-mcp-server via MCP configuration
 2. Server initializes MCP protocol handler
-3. Server starts Unix socket listener
+3. Server starts Unix socket server at /tmp/vim-mcp-server.sock
 4. Server loads and validates registry
 
 #### 7.2.2 Vim Connection
 1. Vim starts and loads vim-mcp plugin
 2. Plugin generates instance_id
-3. Plugin creates state file at `/tmp/vim-mcp-{instance_id}-state.json`
-4. Plugin writes registration to registry
-5. Plugin starts periodic state updates (1 second intervals)
-6. Plugin updates state file on buffer/window changes
+3. Plugin connects to Unix socket at /tmp/vim-mcp-server.sock
+4. Plugin sends registration message with instance information
+5. Server acknowledges registration and stores connection
+6. Plugin sends state updates on buffer/window changes
 
 #### 7.2.3 Disconnection Handling
-1. On Vim exit: Remove entry from registry and delete state file
-2. On server crash: No impact on Vim operation
-3. On Vim crash: Server detects missing state file updates, marks instance as disconnected
+1. On Vim exit: Close Unix socket connection, server removes from registry
+2. On server crash: Vim detects connection loss, attempts reconnection every 5 seconds
+3. On Vim crash: Server detects closed socket, removes instance from registry
+4. **Registry Cleanup**: Registry is automatically cleaned during validation to contain only active connections
 
 ### 7.3 State Synchronization
 
@@ -241,11 +277,11 @@ START
 
 | Condition | Detection | Recovery |
 |-----------|-----------|----------|
-| No Vim instances | Empty registry | Wait and inform user |
-| Vim instance crash | Stale state file + PID check | Remove from registry |
-| Server crash | No impact | Vim continues writing state |
-| State file corruption | JSON parse error | Wait for next update |
-| Permission denied | File creation fails | Log error, fallback to alternate path |
+| No Vim instances | Empty connections map | Wait and inform user |
+| Vim instance crash | Socket closed event | Remove from registry |
+| Server crash | Connection refused | Vim retries every 5 seconds |
+| Socket errors | Unix socket errors | Automatic reconnection |
+| Socket file issues | Server bind fails | Clean up and retry |
 | Registry corruption | JSON parse error | Reset registry file |
 
 ### 8.2 Error Response Format
@@ -279,9 +315,10 @@ START
 ## 9. Security Considerations
 
 ### 9.1 File System Security
-- State files created with user-only permissions (0600)
+- Unix socket created with user-only permissions (0600)
+- Socket file located in /tmp with server-specific naming
 - Registry file created with user-only permissions (0600)
-- File paths use `/tmp` with instance-specific names to prevent conflicts
+- No network exposure (purely local file system communication)
 
 ### 9.2 Command Injection Prevention
 - All Vim commands must be validated before execution
@@ -322,10 +359,9 @@ START
 let g:vim_mcp_enabled = 1
 
 " Optional settings
-let g:vim_mcp_registry_path = '/tmp/vim-mcp-registry.json'
-let g:vim_mcp_state_update_interval = 1000
-let g:vim_mcp_registry_update_interval = 30000
-let g:vim_mcp_state_push_events = ['BufWrite', 'BufEnter', 'WinEnter']
+let g:vim_mcp_socket_path = '/tmp/vim-mcp-server.sock'
+let g:vim_mcp_reconnect_interval = 5000
+let g:vim_mcp_state_push_events = ['BufEnter', 'BufWrite', 'WinEnter']
 ```
 
 ## 11. Implementation Requirements
@@ -333,11 +369,12 @@ let g:vim_mcp_state_push_events = ['BufWrite', 'BufEnter', 'WinEnter']
 ### 11.1 vim-mcp-server Requirements
 - Node.js >= 18.0.0
 - @modelcontextprotocol/sdk >= 1.0.0
-- Platform: Linux, macOS, Windows (file system access)
+- Platform: Linux, macOS (Unix domain sockets)
+- File system write access to /tmp directory
 
 ### 11.2 vim-mcp.vim Requirements
-- Vim >= 8.0 OR Neovim >= 0.5
-- File system write access to /tmp directory
+- Vim >= 8.0 with +channel feature OR Neovim >= 0.5
+- Unix domain socket support (built into Vim channels)
 - JSON encoding/decoding support (built-in)
 
 ### 11.3 Performance Requirements
