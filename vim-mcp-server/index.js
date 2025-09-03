@@ -1029,21 +1029,105 @@ Convert this description to Vim commands: "${description}"`;
     // Start Unix socket server for Vim connections
     this.startUnixServer();
 
-    // Clean up socket on exit
-    const cleanup = () => {
+    // Enhanced cleanup function
+    const cleanup = (signal) => {
+      console.error(`Received ${signal}, shutting down vim-mcp-server...`);
+      
+      // Close all Vim connections
+      for (const [instanceId, conn] of this.vimConnections.entries()) {
+        if (conn.socket && !conn.socket.destroyed) {
+          conn.socket.destroy();
+        }
+      }
+      this.vimConnections.clear();
+
+      // Close Unix server
+      if (this.unixServer) {
+        this.unixServer.close();
+      }
+
+      // Clean up socket file
       if (fs.existsSync(SOCKET_PATH)) {
         fs.unlinkSync(SOCKET_PATH);
       }
+
+      // Clean up registry and preference files
+      if (fs.existsSync(REGISTRY_PATH)) {
+        fs.unlinkSync(REGISTRY_PATH);
+      }
+      if (fs.existsSync(PREFERENCE_PATH)) {
+        fs.unlinkSync(PREFERENCE_PATH);
+      }
+
+      console.error('vim-mcp-server shutdown complete');
+      process.exit(0);
     };
 
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
-    process.on('exit', cleanup);
+    // Handle various exit scenarios
+    process.on('SIGINT', () => cleanup('SIGINT'));
+    process.on('SIGTERM', () => cleanup('SIGTERM'));
+    process.on('SIGHUP', () => cleanup('SIGHUP'));
+    
+    // Handle uncaught exceptions and unhandled rejections
+    process.on('uncaughtException', (err) => {
+      console.error('Uncaught exception:', err);
+      cleanup('uncaughtException');
+    });
+    
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled rejection at:', promise, 'reason:', reason);
+      cleanup('unhandledRejection');
+    });
+
+    // Handle stdin closure (when parent process closes stdio)
+    process.stdin.on('end', () => {
+      console.error('stdin closed, parent process likely died');
+      cleanup('stdin_closed');
+    });
+
+    process.stdin.on('error', (err) => {
+      console.error('stdin error:', err);
+      cleanup('stdin_error');
+    });
+
+    // Set up a timeout to kill the process if no MCP communication happens
+    // This prevents orphaned processes from accumulating
+    let lastActivity = Date.now();
+    let activityTimeout;
+
+    const resetActivityTimer = () => {
+      lastActivity = Date.now();
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      // If no activity for 30 seconds, assume parent is dead
+      activityTimeout = setTimeout(() => {
+        console.error('No MCP activity for 30 seconds, assuming parent died');
+        cleanup('activity_timeout');
+      }, 30000);
+    };
+
+    // Reset timer on any stdin data
+    process.stdin.on('data', () => {
+      resetActivityTimer();
+    });
+
+    // Start the activity timer
+    resetActivityTimer();
+
+    // Clean up timer on exit
+    const originalCleanup = cleanup;
+    cleanup = (signal) => {
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      originalCleanup(signal);
+    };
 
     // Start MCP server
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Vim MCP Server started');
+    console.error('Vim MCP Server started with enhanced cleanup');
   }
 }
 
