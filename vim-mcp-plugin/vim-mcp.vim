@@ -86,6 +86,32 @@ function! s:GetVimState()
     let l:state.windows = l:windows
     echom 'vim-mcp: Window info done, found ' . len(l:windows) . ' windows'
 
+    " Tabs
+    echom 'vim-mcp: Getting tab info'
+    let l:tabs = []
+    for l:tabnr in range(1, tabpagenr('$'))
+      let l:tab = {}
+      let l:tab.id = l:tabnr
+      let l:tab.active = (l:tabnr == tabpagenr())
+      " Get tab label/title if available
+      let l:tab.title = gettabvar(l:tabnr, 'title', '')
+      if empty(l:tab.title)
+        " Generate default title from main buffer
+        let l:main_bufnr = tabpagebuflist(l:tabnr)[tabpagewinnr(l:tabnr) - 1]
+        let l:tab.title = fnamemodify(bufname(l:main_bufnr), ':t')
+        if empty(l:tab.title)
+          let l:tab.title = '[No Name]'
+        endif
+      endif
+      " Get all buffer IDs in this tab
+      let l:tab.buffer_ids = tabpagebuflist(l:tabnr)
+      " Get window count in this tab
+      let l:tab.window_count = len(l:tab.buffer_ids)
+      call add(l:tabs, l:tab)
+    endfor
+    let l:state.tabs = l:tabs
+    echom 'vim-mcp: Tab info done, found ' . len(l:tabs) . ' tabs'
+
     " Basic info only
     let l:state.cursor = getcurpos()[1:2]
     let l:state.mode = mode()

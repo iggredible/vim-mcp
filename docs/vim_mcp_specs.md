@@ -117,6 +117,7 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
     },
     "windows": ["object"],
     "buffers": ["object"],
+    "tabs": ["object"],
     "cursor": ["number"],
     "mode": "string",
     "cwd": "string"
@@ -146,7 +147,31 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 }
 ```
 
-### 4.4 State Files
+### 4.4 Tab Information Schema
+
+**Format**: Array of tab objects in Vim state
+```json
+{
+  "tabs": [
+    {
+      "id": 1,
+      "active": true,
+      "title": "README.md",
+      "buffer_ids": [8, 10],
+      "window_count": 2
+    }
+  ]
+}
+```
+
+**Fields**:
+- `id`: Tab number (1-based)
+- `active`: Whether this is the currently active tab
+- `title`: Tab display title (file name or custom title)
+- `buffer_ids`: Array of buffer IDs contained in this tab
+- `window_count`: Number of windows in this tab
+
+### 4.5 State Files
 
 **Location Pattern**: `/tmp/vim-mcp-{instance_id}-state.json`  
 **Format**: JSON object containing complete Vim state  
@@ -181,11 +206,8 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 |-----|-------------|-----------|--------------|
 | `vim://instances` | List of all Vim instances | application/json | Always |
 | `vim://state` | Complete state of selected instance | application/json | When connected |
-| `vim://buffer/current` | Current buffer content | text/plain | When connected |
 | `vim://buffers` | All buffers information | application/json | When connected |
-| `vim://windows` | Window layout information | application/json | When connected |
-| `vim://diagnostics` | LSP diagnostics | application/json | When connected |
-| `vim://cursor` | Cursor position and context | application/json | When connected |
+| `vim://tabs` | All tabs information | application/json | When connected |
 
 ## 6. MCP Tools
 

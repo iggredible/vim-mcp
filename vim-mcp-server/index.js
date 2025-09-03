@@ -273,6 +273,12 @@ class VimMCPServer {
             mimeType: 'application/json',
             name: 'Vim Buffers',
             description: 'List of all buffers in the selected Vim instance'
+          },
+          {
+            uri: 'vim://tabs',
+            mimeType: 'application/json',
+            name: 'Vim Tabs',
+            description: 'List of all tabs in the selected Vim instance'
           }
         );
       }
@@ -309,7 +315,7 @@ class VimMCPServer {
         throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
       }
 
-      if (uri === 'vim://state' || uri === 'vim://buffers') {
+      if (uri === 'vim://state' || uri === 'vim://buffers' || uri === 'vim://tabs') {
         try {
           const state = await this.requestVimState(this.selectedInstance);
 
@@ -319,6 +325,16 @@ class VimMCPServer {
                 uri: uri,
                 mimeType: 'application/json',
                 text: JSON.stringify(state.buffers || [], null, 2)
+              }]
+            };
+          }
+
+          if (uri === 'vim://tabs') {
+            return {
+              contents: [{
+                uri: uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(state.tabs || [], null, 2)
               }]
             };
           }
