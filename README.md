@@ -81,13 +81,34 @@ Add to your Claude Code MCP settings (`~/.config/claude-code/mcp-servers.json`):
    - `list vim instances` - Shows all connected Vim instances
    - `select vim instance <id>` - Connect to a specific instance
    - `get vim state` - Get complete state of selected instance
+   - `exit vim` - Exit Vim with proper handling of unsaved changes
 
-2. **Query Examples:**
+2. **Vim Control:**
+   - `execute vim command <ex-command>` - Execute any Ex command in Vim
+   - `exit vim` - Safely exit Vim with unsaved changes detection
+   - Examples: "save file", "set line numbers", "quit vim"
+
+3. **Query Examples:**
    - "How many buffers do I have?"
    - "What buffers are open?"
    - "What is my cursor position?"
    - "Show me the current buffer content"
    - "What windows are open?"
+
+### Safe Exit Feature
+
+The `exit vim` command provides safe exit functionality with three modes:
+
+- **Default (check)**: Checks for unsaved changes and warns you before exiting
+- **Save and exit**: Saves all modified buffers and exits (`exit vim save_and_exit`)  
+- **Force exit**: Exits without saving, discarding changes (`exit vim force_exit`)
+
+Examples:
+```
+exit vim                    # Safe exit - warns about unsaved changes
+exit vim save_and_exit     # Save all files and exit
+exit vim force_exit        # Exit without saving (discard changes)
+```
 
 ### Vim Commands
 

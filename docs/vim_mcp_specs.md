@@ -125,6 +125,30 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 }
 ```
 
+##### Command Execution Request (Server → Vim)
+```json
+{
+  "id": "number",
+  "method": "execute_command",
+  "params": {
+    "command": "string"
+  }
+}
+```
+
+##### Command Execution Response (Vim → Server)
+```json
+{
+  "id": "number",
+  "result": {
+    "success": "boolean",
+    "output": "string",
+    "command": "string",
+    "error": "string (optional)"
+  }
+}
+```
+
 ## 4. Data Formats
 
 ### 4.1 Instance Registry
@@ -224,11 +248,53 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 
 | Tool | Parameters | Description | Availability |
 |------|-----------|-------------|--------------|
-| `vim_execute` | command: string | Execute Ex command | When connected |
+| `vim_execute` | command: string | Execute Ex command in Vim instance | When connected |
+| `exit_vim` | action?: 'check'\|'save_and_exit'\|'force_exit' | Exit Vim with unsaved changes handling | When connected |
 | `vim_edit` | file: string, line?: number, column?: number, content?: string | Edit file | When connected |
 | `vim_search` | pattern: string, scope?: 'current'\|'all' | Search in buffers | When connected |
 | `vim_navigate` | direction: string, count?: number | Navigate in buffer | When connected |
 | `vim_get_diagnostics` | buffer?: number | Get LSP diagnostics | When connected |
+
+### 6.2 Tool Implementation Details
+
+#### 6.2.1 vim_execute Tool
+**Purpose**: Execute Ex commands directly in the selected Vim instance  
+**Parameters**:
+- `command` (required): The Ex command to execute (e.g., "w", "q", "set number")
+
+**Behavior**:
+- Commands are executed in the context of the current Vim session
+- Output from the command is captured and returned
+- Errors are caught and returned with error details
+- Exit commands (q, qa, wq, etc.) are handled specially with socket closure detection
+
+**Example Usage**:
+```json
+{"tool": "vim_execute", "arguments": {"command": "w"}}
+{"tool": "vim_execute", "arguments": {"command": "set number"}}
+```
+
+#### 6.2.2 exit_vim Tool
+**Purpose**: Exit Vim instance with proper handling of unsaved changes  
+**Parameters**:
+- `action` (optional): Action to take for unsaved changes
+  - `"check"` (default): Check for unsaved changes and prompt if found
+  - `"save_and_exit"`: Save all buffers and exit
+  - `"force_exit"`: Exit without saving (discard changes)
+
+**Behavior**:
+- Default action checks current state for modified buffers
+- If unsaved changes exist with "check" action, returns list of modified buffers
+- "save_and_exit" executes `:wqall` to save all and exit
+- "force_exit" executes `:qall!` to exit without saving
+- Socket closure is monitored to confirm successful exit
+
+**Example Usage**:
+```json
+{"tool": "exit_vim", "arguments": {}}
+{"tool": "exit_vim", "arguments": {"action": "save_and_exit"}}
+{"tool": "exit_vim", "arguments": {"action": "force_exit"}}
+```
 
 ## 7. Behavior Specifications
 

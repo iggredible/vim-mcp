@@ -37,6 +37,32 @@ function! s:GenerateInstanceID()
   return l:filename . '-' . l:project . '-' . l:pid
 endfunction
 
+" Execute a Vim command and return the result
+function! s:ExecuteCommand(command)
+  echom 'vim-mcp: Executing command: ' . a:command
+
+  try
+    " Capture command output
+    redir => l:output
+    silent execute a:command
+    redir END
+
+    return {
+      'success': 1,
+      'output': l:output,
+      'command': a:command
+    }
+  catch
+    echom 'vim-mcp: Error executing command: ' . v:exception
+    return {
+      'success': 0,
+      'error': v:exception,
+      'output': '',
+      'command': a:command
+    }
+  endtry
+endfunction
+
 " Get current Vim state
 function! s:GetVimState()
   echom 'vim-mcp: Starting GetVimState()'
@@ -148,6 +174,10 @@ function! s:HandleMessage(channel, msg)
         echom 'vim-mcp: Getting Vim state...'
         let l:response.result = s:GetVimState()
         echom 'vim-mcp: State retrieved, sending response'
+      elseif l:message.method == 'execute_command'
+        echom 'vim-mcp: Executing command: ' . l:message.params.command
+        let l:response.result = s:ExecuteCommand(l:message.params.command)
+        echom 'vim-mcp: Command executed, sending response'
       else
         let l:response.error = {'code': -32601, 'message': 'Method not found'}
       endif
