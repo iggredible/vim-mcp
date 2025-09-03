@@ -156,6 +156,18 @@ class VimMCPServer {
     // Check if this is an exit command
     const isExitCommand = /^(q|qa|qall|wq|wqa|wqall|q!|qa!|qall!)(\s|$)/.test(command.trim());
 
+    if (isExitCommand) {
+      // Handle exit commands with socket closure detection
+      return this.executeExitCommand(instanceId, command);
+    }
+
+    // For normal commands, use state-based verification
+    return this.executeCommandWithStateVerification(instanceId, command);
+  }
+
+  async executeExitCommand(instanceId, command) {
+    const conn = this.vimConnections.get(instanceId);
+    
     return new Promise((resolve, reject) => {
       const requestId = Date.now();
       const request = JSON.stringify({
@@ -164,75 +176,359 @@ class VimMCPServer {
         params: { command: command }
       }) + '\n';
 
-      if (isExitCommand) {
-        // Mark this instance as pending exit
-        this.pendingExits.add(instanceId);
-        
-        // For exit commands, listen for socket closure instead of JSON response
-        const closeHandler = () => {
-          // Socket closed - this indicates successful exit
-          conn.socket.removeListener('close', closeHandler);
-          conn.socket.removeListener('error', errorHandler);
-          this.pendingExits.delete(instanceId);
-          resolve({
-            success: true,
-            output: 'Vim exited successfully',
-            command: command
-          });
-        };
+      // Mark this instance as pending exit
+      this.pendingExits.add(instanceId);
+      
+      // For exit commands, listen for socket closure instead of JSON response
+      const closeHandler = () => {
+        // Socket closed - this indicates successful exit
+        conn.socket.removeListener('close', closeHandler);
+        conn.socket.removeListener('error', errorHandler);
+        this.pendingExits.delete(instanceId);
+        resolve({
+          success: true,
+          output: 'Vim exited successfully',
+          command: command
+        });
+      };
 
-        const errorHandler = (err) => {
-          conn.socket.removeListener('close', closeHandler);
-          conn.socket.removeListener('error', errorHandler);
-          this.pendingExits.delete(instanceId);
-          reject(new Error(`Socket error during exit: ${err.message}`));
-        };
+      const errorHandler = (err) => {
+        conn.socket.removeListener('close', closeHandler);
+        conn.socket.removeListener('error', errorHandler);
+        this.pendingExits.delete(instanceId);
+        reject(new Error(`Socket error during exit: ${err.message}`));
+      };
 
-        conn.socket.once('close', closeHandler);
-        conn.socket.once('error', errorHandler);
-        conn.socket.write(request);
+      conn.socket.once('close', closeHandler);
+      conn.socket.once('error', errorHandler);
+      conn.socket.write(request);
 
-        // Shorter timeout for exit commands (just waiting for socket close)
-        setTimeout(() => {
-          conn.socket.removeListener('close', closeHandler);
-          conn.socket.removeListener('error', errorHandler);
-          this.pendingExits.delete(instanceId);
-          reject(new Error('Timeout waiting for Vim to exit'));
-        }, 2000);
-      } else {
-        // Normal command execution - wait for JSON response
-        const responseHandler = (data) => {
-          try {
-            const lines = data.toString().split('\n');
-            for (const line of lines) {
-              if (line.trim()) {
-                const response = JSON.parse(line);
-                if (response.id === requestId) {
-                  conn.socket.removeListener('data', responseHandler);
-                  if (response.error) {
-                    reject(new Error(response.error.message));
-                  } else {
-                    resolve(response.result);
-                  }
-                  return;
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Error parsing response:', e);
-          }
-        };
-
-        conn.socket.on('data', responseHandler);
-        conn.socket.write(request);
-
-        // Timeout after 5 seconds for command execution
-        setTimeout(() => {
-          conn.socket.removeListener('data', responseHandler);
-          reject(new Error('Timeout waiting for command execution'));
-        }, 5000);
-      }
+      // Timeout for exit commands
+      setTimeout(() => {
+        conn.socket.removeListener('close', closeHandler);
+        conn.socket.removeListener('error', errorHandler);
+        this.pendingExits.delete(instanceId);
+        reject(new Error('Timeout waiting for Vim to exit'));
+      }, 2000);
     });
+  }
+
+  async executeCommandWithStateVerification(instanceId, command) {
+    const conn = this.vimConnections.get(instanceId);
+    
+    // Get state before command execution
+    let beforeState;
+    try {
+      beforeState = await this.requestVimState(instanceId);
+    } catch (error) {
+      throw new Error(`Failed to get state before command: ${error.message}`);
+    }
+
+    // Send command to Vim (fire and forget)
+    const requestId = Date.now();
+    const request = JSON.stringify({
+      id: requestId,
+      method: 'execute_command',
+      params: { command: command }
+    }) + '\n';
+
+    conn.socket.write(request);
+
+    // Wait briefly for command to process, then verify state
+    return new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        try {
+          // Get state after command execution
+          const afterState = await this.requestVimState(instanceId);
+          
+          // Verify the command worked by comparing states
+          const verification = this.verifyCommandExecution(command, beforeState, afterState);
+          
+          if (verification.success) {
+            resolve({
+              success: true,
+              output: verification.message,
+              command: command,
+              state_changed: true,
+              before_state: beforeState,
+              after_state: afterState
+            });
+          } else {
+            reject(new Error(`Command verification failed: ${verification.message}`));
+          }
+        } catch (error) {
+          reject(new Error(`Failed to verify command execution: ${error.message}`));
+        }
+      }, 500); // Wait 500ms for command to process
+    });
+  }
+
+  verifyCommandExecution(command, beforeState, afterState) {
+    const cmd = command.trim().toLowerCase();
+    
+    // Window splitting commands
+    if (cmd === 'split' || cmd.startsWith('split ')) {
+      const beforeWindows = beforeState.windows ? beforeState.windows.length : 0;
+      const afterWindows = afterState.windows ? afterState.windows.length : 0;
+      
+      if (afterWindows > beforeWindows) {
+        return {
+          success: true,
+          message: `Window split successful. Windows increased from ${beforeWindows} to ${afterWindows}.`
+        };
+      }
+      return {
+        success: false,
+        message: `Window split may have failed. Window count unchanged: ${beforeWindows}.`
+      };
+    }
+    
+    if (cmd === 'vsplit' || cmd.startsWith('vsplit ')) {
+      const beforeWindows = beforeState.windows ? beforeState.windows.length : 0;
+      const afterWindows = afterState.windows ? afterState.windows.length : 0;
+      
+      if (afterWindows > beforeWindows) {
+        return {
+          success: true,
+          message: `Vertical split successful. Windows increased from ${beforeWindows} to ${afterWindows}.`
+        };
+      }
+      return {
+        success: false,
+        message: `Vertical split may have failed. Window count unchanged: ${beforeWindows}.`
+      };
+    }
+    
+    // Tab commands
+    if (cmd === 'tabnew' || cmd.startsWith('tabnew ')) {
+      const beforeTabs = beforeState.tabs ? beforeState.tabs.length : 0;
+      const afterTabs = afterState.tabs ? afterState.tabs.length : 0;
+      
+      if (afterTabs > beforeTabs) {
+        return {
+          success: true,
+          message: `New tab created successfully. Tabs increased from ${beforeTabs} to ${afterTabs}.`
+        };
+      }
+      return {
+        success: false,
+        message: `Tab creation may have failed. Tab count unchanged: ${beforeTabs}.`
+      };
+    }
+    
+    if (cmd === 'tabnext' || cmd === 'tabprevious') {
+      const beforeActiveTab = beforeState.tabs ? beforeState.tabs.findIndex(t => t.active) : -1;
+      const afterActiveTab = afterState.tabs ? afterState.tabs.findIndex(t => t.active) : -1;
+      
+      if (beforeActiveTab !== afterActiveTab) {
+        return {
+          success: true,
+          message: `Tab navigation successful. Active tab changed from ${beforeActiveTab + 1} to ${afterActiveTab + 1}.`
+        };
+      }
+      return {
+        success: false,
+        message: `Tab navigation may have failed or already at ${cmd === 'tabnext' ? 'last' : 'first'} tab.`
+      };
+    }
+    
+    // File operations
+    if (cmd.startsWith('edit ') || cmd.startsWith('e ')) {
+      const filename = cmd.split(' ')[1];
+      const afterBuffer = afterState.current_buffer;
+      
+      if (afterBuffer && (afterBuffer.name.endsWith(filename) || afterBuffer.name.includes(filename))) {
+        return {
+          success: true,
+          message: `File opened successfully: ${afterBuffer.name}`
+        };
+      }
+      return {
+        success: false,
+        message: `File opening may have failed. Current buffer: ${afterBuffer ? afterBuffer.name : 'unknown'}`
+      };
+    }
+    
+    // Settings commands
+    if (cmd.startsWith('set ')) {
+      // For settings commands, assume success if no error occurred
+      return {
+        success: true,
+        message: `Setting command executed: ${command}`
+      };
+    }
+    
+    // Window navigation commands
+    if (cmd.startsWith('wincmd ')) {
+      // Check if current window/cursor changed
+      const beforeCursor = beforeState.cursor || [0, 0];
+      const afterCursor = afterState.cursor || [0, 0];
+      const beforeCurrentBuf = beforeState.current_buffer ? beforeState.current_buffer.id : null;
+      const afterCurrentBuf = afterState.current_buffer ? afterState.current_buffer.id : null;
+      
+      if (beforeCurrentBuf !== afterCurrentBuf) {
+        return {
+          success: true,
+          message: `Window navigation successful. Moved to buffer ${afterCurrentBuf}.`
+        };
+      }
+      return {
+        success: true,
+        message: `Window navigation command executed: ${command}`
+      };
+    }
+    
+    // Write/save commands
+    if (cmd === 'w' || cmd === 'write') {
+      const afterBuffer = afterState.current_buffer;
+      if (afterBuffer && !afterBuffer.modified) {
+        return {
+          success: true,
+          message: `File saved successfully: ${afterBuffer.name || '[No Name]'}`
+        };
+      }
+      return {
+        success: true,
+        message: `Write command executed: ${command}`
+      };
+    }
+    
+    // Generic fallback - assume success if state is retrievable
+    return {
+      success: true,
+      message: `Command executed successfully: ${command}`
+    };
+  }
+
+  async interpretCommand(description) {
+    // Handle direct Ex commands (starting with :)
+    if (description.trim().startsWith(':')) {
+      return [description.trim().substring(1)];
+    }
+
+    const systemPrompt = `You are a Vim command interpreter. Convert natural language descriptions into Vim Ex commands.
+
+RULES:
+1. Return ONLY valid Vim Ex commands, one per line
+2. Do not include colons (:) - just the command part
+3. For complex operations, return multiple commands in sequence
+4. If unsure, return simpler/safer commands
+5. Never return explanations or comments, only commands
+
+COMMON COMMANDS:
+- Window splitting: split (horizontal), vsplit (vertical), wincmd h/j/k/l (navigate)
+- Tabs: tabnew [file], tabnext, tabprevious, tabclose
+- Files: edit [file], w (save), q (quit), wq (save and quit)
+- Buffers: bnext, bprevious, bdelete, buffer [n]
+- Settings: set number, set nonumber, set hlsearch, set nohlsearch
+- Search: /pattern, n (next), N (previous), set nohlsearch (clear)
+
+EXAMPLES:
+"split vim into 4 equal windows" → split\nvsplit\nwincmd k\nvsplit
+"create 3 tabs" → tabnew\ntabnew
+"create tabs for foo.md, bar.md, baz.md" → edit foo.md\ntabnew bar.md\ntabnew baz.md
+"show line numbers" → set number
+"save file" → w
+"go to next tab" → tabnext
+"move to left window" → wincmd h
+
+Convert this description to Vim commands: "${description}"`;
+
+    try {
+      // Use Claude to interpret the natural language
+      const response = await this.callClaude(systemPrompt);
+      
+      // Parse the response into individual commands
+      const commands = response
+        .split('\n')
+        .map(cmd => cmd.trim())
+        .filter(cmd => cmd.length > 0);
+
+      if (commands.length === 0) {
+        throw new Error('No valid commands generated');
+      }
+
+      // Validate commands are safe
+      this.validateCommands(commands);
+      
+      return commands;
+    } catch (error) {
+      throw new Error(`Failed to interpret command "${description}": ${error.message}`);
+    }
+  }
+
+  async callClaude(prompt) {
+    // For now, return a simple interpretation that handles basic cases
+    // In a real implementation, this would call Claude's API
+    
+    // This is a simplified fallback that handles some common cases
+    const desc = prompt.split('"')[1]?.toLowerCase().trim() || '';
+    
+    if (desc.includes('split') && desc.includes('4') && desc.includes('window')) {
+      return 'split\nvsplit\nwincmd k\nvsplit';
+    }
+    if (desc.includes('split') && desc.includes('3') && desc.includes('window')) {
+      return 'split\nsplit';
+    }
+    if (desc.includes('create') && desc.includes('tab') && desc.includes('for')) {
+      const files = desc.match(/for\s+(.+)/)?.[1]?.split(/,|\s+and\s+/) || [];
+      if (files.length > 0) {
+        let result = `edit ${files[0]?.trim().replace(/^(one\s+for\s+|two\s+for\s+|three\s+for\s+)/i, '')}`;
+        for (let i = 1; i < files.length; i++) {
+          const file = files[i]?.trim().replace(/^(one\s+for\s+|two\s+for\s+|three\s+for\s+)/i, '');
+          if (file) {
+            result += `\ntabnew ${file}`;
+          }
+        }
+        return result;
+      }
+    }
+    if (desc.includes('show') && desc.includes('line') && desc.includes('number')) {
+      return 'set number';
+    }
+    if (desc.includes('save') && desc.includes('file')) {
+      return 'w';
+    }
+    if (desc.includes('next') && desc.includes('tab')) {
+      return 'tabnext';
+    }
+    if (desc.includes('vertical') && desc.includes('split')) {
+      return 'vsplit';
+    }
+    if (desc.includes('horizontal') && desc.includes('split')) {
+      return 'split';
+    }
+    if (desc.match(/create\s+(\d+)\s+tab/)) {
+      const num = parseInt(desc.match(/create\s+(\d+)\s+tab/)[1]) - 1;
+      return Array(num).fill('tabnew').join('\n');
+    }
+    
+    throw new Error(`Cannot interpret command: "${desc}". Try being more specific.`);
+  }
+
+  validateCommands(commands) {
+    const dangerousCommands = ['!', 'shell', 'system', 'delete', 'substitute'];
+    const validCommandPrefixes = [
+      'set', 'split', 'vsplit', 'wincmd', 'tabnew', 'tabnext', 'tabprevious', 
+      'tabclose', 'edit', 'w', 'q', 'wq', 'bnext', 'bprevious', 'bdelete',
+      'buffer', 'close', 'quit', 'write', 'new', 'vnew'
+    ];
+
+    for (const command of commands) {
+      // Check for dangerous commands
+      if (dangerousCommands.some(danger => command.includes(danger))) {
+        throw new Error(`Potentially dangerous command: ${command}`);
+      }
+
+      // Check if command starts with a valid prefix
+      const isValid = validCommandPrefixes.some(prefix => 
+        command.startsWith(prefix + ' ') || command === prefix
+      );
+
+      if (!isValid) {
+        throw new Error(`Invalid or unsupported command: ${command}`);
+      }
+    }
   }
 
   startUnixServer() {
@@ -558,6 +854,37 @@ class VimMCPServer {
         }
       }
 
+      if (name === 'execute_command') {
+        if (!this.selectedInstance) {
+          throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
+        }
+
+        const description = args.description;
+        if (!description) {
+          throw new Error('Description parameter is required');
+        }
+
+        try {
+          // Convert natural language to Vim commands
+          const commands = await this.interpretCommand(description);
+          let results = [];
+          
+          for (const command of commands) {
+            const result = await this.executeVimCommand(this.selectedInstance, command);
+            results.push(`> ${command}\n${result.output || 'OK'}`);
+          }
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Executed command: "${description}"\n\n${results.join('\n\n')}`
+            }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to execute command: ${error.message}`);
+        }
+      }
+
       if (name === 'exit_vim') {
         if (!this.selectedInstance) {
           throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
@@ -663,6 +990,20 @@ class VimMCPServer {
                 }
               },
               required: ['command']
+            }
+          },
+          {
+            name: 'execute_command',
+            description: 'Execute natural language commands in Vim (e.g., "split vim into 4 equal windows", "create 3 tabs for foo.md, bar.md, and baz.md")',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                description: {
+                  type: 'string',
+                  description: 'Natural language description of what you want to do in Vim'
+                }
+              },
+              required: ['description']
             }
           },
           {

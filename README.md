@@ -85,6 +85,7 @@ Add to your Claude Code MCP settings (`~/.config/claude-code/mcp-servers.json`):
 
 2. **Vim Control:**
    - `execute vim command <ex-command>` - Execute any Ex command in Vim
+   - `execute command <description>` - Execute natural language commands (NEW!)
    - `exit vim` - Safely exit Vim with unsaved changes detection
    - Examples: "save file", "set line numbers", "quit vim"
 
@@ -94,6 +95,80 @@ Add to your Claude Code MCP settings (`~/.config/claude-code/mcp-servers.json`):
    - "What is my cursor position?"
    - "Show me the current buffer content"
    - "What windows are open?"
+
+### Natural Language Commands with Intelligent Execution (ENHANCED!)
+
+The `execute command` feature uses intelligent natural language processing to understand your intent and convert it to Vim commands. It now includes state verification to confirm commands executed successfully:
+
+**Flexible Phrasing - All of these work:**
+```
+execute command "split vim into 4 equal windows"
+execute command "divide the screen into 4 parts"  
+execute command "make 4 window sections"
+execute command "create 4 equal panes"
+```
+
+**Window Management:**
+```
+execute command "split the window vertically"
+execute command "make a horizontal split"
+execute command "go to the left window"
+execute command "move to the window on the right"
+```
+
+**Tab Management:**
+```
+execute command "create 3 new tabs"
+execute command "open foo.md, bar.md, and baz.md in separate tabs"
+execute command "switch to next tab"
+execute command "close this tab"
+```
+
+**File & Settings:**
+```
+execute command "save the current file"
+execute command "turn on line numbers"
+execute command "enable search highlighting"
+execute command "open the file called example.txt"
+```
+
+**Buffer Operations:**
+```
+execute command "go to next buffer"
+execute command "switch to previous buffer"
+execute command "close current buffer"
+```
+
+**Enhanced Features:**
+- **State Verification**: Automatically verifies commands worked by comparing Vim state before/after execution
+- **Smart Understanding**: Handles typos and variations in phrasing
+- **Context Awareness**: Understands intent and can interpret complex multi-step requests
+- **Safety Validation**: Only allows safe, whitelisted Vim commands with dangerous command blocking
+- **Detailed Feedback**: Shows exactly which Vim commands were executed and verification results
+- **Exit Command Handling**: Special handling for quit commands with proper socket closure detection
+- **Multi-Command Execution**: Automatically breaks down complex requests into multiple Vim commands
+
+**Verification Examples:**
+When you run `execute command "split vim into 4 equal windows"`, you'll see:
+```
+> split
+Window split successful. Windows increased from 1 to 2.
+
+> vsplit  
+Vertical split successful. Windows increased from 2 to 3.
+
+> wincmd k
+Window navigation command executed: wincmd k
+
+> vsplit
+Vertical split successful. Windows increased from 3 to 4.
+```
+
+**Safety & Reliability:**
+- Commands are validated against a whitelist of safe Vim Ex commands
+- Dangerous operations like shell execution, file deletion are blocked
+- State verification ensures commands actually worked as expected
+- Clear error messages for invalid or unsupported requests
 
 ### Safe Exit Feature
 

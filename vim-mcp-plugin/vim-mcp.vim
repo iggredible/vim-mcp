@@ -48,18 +48,18 @@ function! s:ExecuteCommand(command)
     redir END
 
     return {
-      'success': 1,
-      'output': l:output,
-      'command': a:command
-    }
+      \ 'success': 1,
+      \ 'output': l:output,
+      \ 'command': a:command
+      \ }
   catch
     echom 'vim-mcp: Error executing command: ' . v:exception
     return {
-      'success': 0,
-      'error': v:exception,
-      'output': '',
-      'command': a:command
-    }
+      \ 'success': 0,
+      \ 'error': v:exception,
+      \ 'output': '',
+      \ 'command': a:command
+      \ }
   endtry
 endfunction
 
@@ -168,7 +168,9 @@ function! s:HandleMessage(channel, msg)
     elseif has_key(l:message, 'method')
       echom 'vim-mcp: Processing method: ' . l:message.method
       " Handle RPC-style requests
-      let l:response = {'id': get(l:message, 'id', 0)}
+      let l:response = {
+        \ 'id': get(l:message, 'id', 0)
+        \ }
 
       if l:message.method == 'get_state'
         echom 'vim-mcp: Getting Vim state...'
@@ -179,7 +181,10 @@ function! s:HandleMessage(channel, msg)
         let l:response.result = s:ExecuteCommand(l:message.params.command)
         echom 'vim-mcp: Command executed, sending response'
       else
-        let l:response.error = {'code': -32601, 'message': 'Method not found'}
+        let l:response.error = {
+          \ 'code': -32601,
+          \ 'message': 'Method not found'
+          \ }
       endif
 
       " Send response back
