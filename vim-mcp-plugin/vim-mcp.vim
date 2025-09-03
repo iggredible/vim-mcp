@@ -19,6 +19,15 @@ let s:connected = 0
 let s:connection_timer = v:null
 let s:mcp_socket_path = get(g:, 'vim_mcp_socket_path', '/tmp/vim-mcp-server.sock')
 let s:reconnect_interval = get(g:, 'vim_mcp_reconnect_interval', 5000)
+let s:debug_enabled = get(g:, 'vim_mcp_debug', 0)
+
+" Silent debug logging function to avoid interfering with user input
+function! s:DebugLog(msg)
+  if s:debug_enabled
+    " Only show debug messages if explicitly enabled
+    echom 'vim-mcp: ' . a:msg
+  endif
+endfunction
 
 " Generate instance ID
 function! s:GenerateInstanceID()
@@ -39,7 +48,8 @@ endfunction
 
 " Execute a Vim command and return the result
 function! s:ExecuteCommand(command)
-  echom 'vim-mcp: Executing command: ' . a:command
+  " Silent debug logging to avoid interfering with user input
+  call s:DebugLog('Executing command: ' . a:command)
 
   try
     " Capture command output
@@ -53,7 +63,7 @@ function! s:ExecuteCommand(command)
       \ 'command': a:command
       \ }
   catch
-    echom 'vim-mcp: Error executing command: ' . v:exception
+    call s:DebugLog('Error executing command: ' . v:exception)
     return {
       \ 'success': 0,
       \ 'error': v:exception,
@@ -65,12 +75,12 @@ endfunction
 
 " Get current Vim state
 function! s:GetVimState()
-  echom 'vim-mcp: Starting GetVimState()'
+  call s:DebugLog('Starting GetVimState()')
   let l:state = {}
 
   try
     " Current buffer info (minimal)
-    echom 'vim-mcp: Getting current buffer info'
+    call s:DebugLog('Getting current buffer info')
     let l:current_buf = {}
     let l:current_buf.id = bufnr('%')
     let l:current_buf.name = expand('%:p')
@@ -80,10 +90,10 @@ function! s:GetVimState()
     " Skip content for now to avoid timeouts
     let l:current_buf.content = []
     let l:state.current_buffer = l:current_buf
-    echom 'vim-mcp: Current buffer info done'
+    call s:DebugLog('Current buffer info done')
 
     " All buffers (minimal)
-    echom 'vim-mcp: Getting buffer list'
+    call s:DebugLog('Getting buffer list')
     let l:buffers = []
     for l:bufnr in range(1, bufnr('$'))
       if buflisted(l:bufnr)
@@ -96,10 +106,10 @@ function! s:GetVimState()
       endif
     endfor
     let l:state.buffers = l:buffers
-    echom 'vim-mcp: Buffer list done, found ' . len(l:buffers) . ' buffers'
+    call s:DebugLog('Buffer list done, found ' . len(l:buffers) . ' buffers')
 
     " Windows
-    echom 'vim-mcp: Getting window info'
+    call s:DebugLog('Getting window info')
     let l:windows = []
     for l:winnr in range(1, winnr('$'))
       let l:win = {}
@@ -110,10 +120,10 @@ function! s:GetVimState()
       call add(l:windows, l:win)
     endfor
     let l:state.windows = l:windows
-    echom 'vim-mcp: Window info done, found ' . len(l:windows) . ' windows'
+    call s:DebugLog('Window info done, found ' . len(l:windows) . ' windows')
 
     " Tabs
-    echom 'vim-mcp: Getting tab info'
+    call s:DebugLog('Getting tab info')
     let l:tabs = []
     for l:tabnr in range(1, tabpagenr('$'))
       let l:tab = {}
@@ -136,17 +146,17 @@ function! s:GetVimState()
       call add(l:tabs, l:tab)
     endfor
     let l:state.tabs = l:tabs
-    echom 'vim-mcp: Tab info done, found ' . len(l:tabs) . ' tabs'
+    call s:DebugLog('Tab info done, found ' . len(l:tabs) . ' tabs')
 
     " Basic info only
     let l:state.cursor = getcurpos()[1:2]
     let l:state.mode = mode()
     let l:state.cwd = getcwd()
 
-    echom 'vim-mcp: GetVimState() completed successfully'
+    call s:DebugLog('GetVimState() completed successfully')
     return l:state
   catch
-    echom 'vim-mcp: Error in GetVimState(): ' . v:exception
+    call s:DebugLog('Error in GetVimState(): ' . v:exception)
     return {'error': 'Failed to get state: ' . v:exception}
   endtry
 endfunction
@@ -154,7 +164,7 @@ endfunction
 " Handle incoming messages from MCP server
 function! s:HandleMessage(channel, msg)
   try
-    echom 'vim-mcp: Received message: ' . a:msg[:100] . '...'
+    call s:DebugLog('Received message: ' . a:msg[:100] . '...')
 
     " Parse JSON message
     let l:message = json_decode(a:msg)
@@ -162,24 +172,24 @@ function! s:HandleMessage(channel, msg)
     " Handle different message types
     if has_key(l:message, 'type')
       if l:message.type == 'registered'
-        echom 'vim-mcp: Registered with server as ' . l:message.instance_id
+        call s:DebugLog('Registered with server as ' . l:message.instance_id)
         let s:connected = 1
       endif
     elseif has_key(l:message, 'method')
-      echom 'vim-mcp: Processing method: ' . l:message.method
+      call s:DebugLog('Processing method: ' . l:message.method)
       " Handle RPC-style requests
       let l:response = {
         \ 'id': get(l:message, 'id', 0)
         \ }
 
       if l:message.method == 'get_state'
-        echom 'vim-mcp: Getting Vim state...'
+        call s:DebugLog('Getting Vim state...')
         let l:response.result = s:GetVimState()
-        echom 'vim-mcp: State retrieved, sending response'
+        call s:DebugLog('State retrieved, sending response')
       elseif l:message.method == 'execute_command'
-        echom 'vim-mcp: Executing command: ' . l:message.params.command
+        call s:DebugLog('Executing command: ' . l:message.params.command)
         let l:response.result = s:ExecuteCommand(l:message.params.command)
-        echom 'vim-mcp: Command executed, sending response'
+        call s:DebugLog('Command executed, sending response')
       else
         let l:response.error = {
           \ 'code': -32601,
@@ -189,10 +199,10 @@ function! s:HandleMessage(channel, msg)
 
       " Send response back
       call s:SendMessage(l:response)
-      echom 'vim-mcp: Response sent'
+      call s:DebugLog('Response sent')
     endif
   catch
-    echom 'vim-mcp: Error handling message: ' . v:exception
+    call s:DebugLog('Error handling message: ' . v:exception)
     echohl ErrorMsg | echo 'vim-mcp: Error handling message: ' . v:exception | echohl None
   endtry
 endfunction
@@ -210,7 +220,7 @@ endfunction
 
 " Handle channel close
 function! s:HandleClose(channel)
-  echom 'vim-mcp: Disconnected from server'
+  call s:DebugLog('Disconnected from server')
   let s:connected = 0
   let s:channel = v:null
 
@@ -255,7 +265,7 @@ function! s:Connect()
             \ }
             \ }
       call s:SendMessage(l:register_msg)
-      echom 'vim-mcp: Connected to server at ' . s:mcp_socket_path
+      call s:DebugLog('Connected to server at ' . s:mcp_socket_path)
     else
       throw 'Failed to connect - channel not open'
     endif
@@ -265,7 +275,7 @@ function! s:Connect()
 
     " Show error but don't spam if already retrying
     if s:connection_timer == v:null
-      echom 'vim-mcp: MCP server not available, will retry every ' . (s:reconnect_interval / 1000) . 's'
+      if s:connection_timer == v:null | call s:DebugLog('MCP server not available, will retry every ' . (s:reconnect_interval / 1000) . 's') | endif
     endif
 
     " Start persistent retry timer
@@ -326,7 +336,7 @@ function! s:AttemptReconnect(timer)
             \ }
             \ }
       call s:SendMessage(l:register_msg)
-      echom 'vim-mcp: Successfully connected to MCP server'
+      call s:DebugLog('Successfully connected to MCP server')
     else
       let s:channel = v:null
     endif
