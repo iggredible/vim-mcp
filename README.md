@@ -85,9 +85,8 @@ Add to your Claude Code MCP settings (`~/.config/claude-code/mcp-servers.json`):
 
 2. **Vim Control:**
    - `execute vim command <ex-command>` - Execute any Ex command in Vim
-   - `execute command <description>` - Execute natural language commands (NEW!)
+   - `execute command <ex-command>` - Execute direct Ex commands (e.g., ":split", ":vsplit")
    - `exit vim` - Safely exit Vim with unsaved changes detection
-   - Examples: "save file", "set line numbers", "quit vim"
 
 3. **Query Examples:**
    - "How many buffers do I have?"
@@ -96,79 +95,40 @@ Add to your Claude Code MCP settings (`~/.config/claude-code/mcp-servers.json`):
    - "Show me the current buffer content"
    - "What windows are open?"
 
-### Natural Language Commands with Intelligent Execution (ENHANCED!)
+### Direct Ex Command Execution
 
-The `execute command` feature uses intelligent natural language processing to understand your intent and convert it to Vim commands. It now includes state verification to confirm commands executed successfully:
-
-**Flexible Phrasing - All of these work:**
-```
-execute command "split vim into 4 equal windows"
-execute command "divide the screen into 4 parts"  
-execute command "make 4 window sections"
-execute command "create 4 equal panes"
-```
+The `execute command` feature allows you to run Vim Ex commands directly:
 
 **Window Management:**
 ```
-execute command "split the window vertically"
-execute command "make a horizontal split"
-execute command "go to the left window"
-execute command "move to the window on the right"
+execute command ":split"          # Horizontal split
+execute command ":vsplit"         # Vertical split  
+execute command ":wincmd h"       # Move to left window
+execute command ":wincmd l"       # Move to right window
 ```
 
 **Tab Management:**
 ```
-execute command "create 3 new tabs"
-execute command "open foo.md, bar.md, and baz.md in separate tabs"
-execute command "switch to next tab"
-execute command "close this tab"
+execute command ":tabnew"         # Create new tab
+execute command ":tabnext"        # Switch to next tab
+execute command ":tabprev"        # Switch to previous tab
+execute command ":tabclose"       # Close current tab
 ```
 
 **File & Settings:**
 ```
-execute command "save the current file"
-execute command "turn on line numbers"
-execute command "enable search highlighting"
-execute command "open the file called example.txt"
+execute command ":w"              # Save current file
+execute command ":set number"     # Show line numbers
+execute command ":set hlsearch"   # Enable search highlighting
+execute command ":e filename"     # Open file
 ```
 
 **Buffer Operations:**
 ```
-execute command "go to next buffer"
-execute command "switch to previous buffer"
-execute command "close current buffer"
+execute command ":bnext"          # Go to next buffer
+execute command ":bprev"          # Go to previous buffer
+execute command ":bdelete"        # Delete current buffer
 ```
-
-**Enhanced Features:**
-- **State Verification**: Automatically verifies commands worked by comparing Vim state before/after execution
-- **Smart Understanding**: Handles typos and variations in phrasing
-- **Context Awareness**: Understands intent and can interpret complex multi-step requests
-- **Safety Validation**: Only allows safe, whitelisted Vim commands with dangerous command blocking
-- **Detailed Feedback**: Shows exactly which Vim commands were executed and verification results
-- **Exit Command Handling**: Special handling for quit commands with proper socket closure detection
-- **Multi-Command Execution**: Automatically breaks down complex requests into multiple Vim commands
-
-**Verification Examples:**
-When you run `execute command "split vim into 4 equal windows"`, you'll see:
-```
-> split
-Window split successful. Windows increased from 1 to 2.
-
-> vsplit  
-Vertical split successful. Windows increased from 2 to 3.
-
-> wincmd k
-Window navigation command executed: wincmd k
-
-> vsplit
-Vertical split successful. Windows increased from 3 to 4.
-```
-
-**Safety & Reliability:**
-- Commands are validated against a whitelist of safe Vim Ex commands
-- Dangerous operations like shell execution, file deletion are blocked
-- State verification ensures commands actually worked as expected
-- Clear error messages for invalid or unsupported requests
 
 ### Safe Exit Feature
 

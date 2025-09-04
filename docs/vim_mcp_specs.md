@@ -249,7 +249,7 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 | Tool | Parameters | Description | Availability |
 |------|-----------|-------------|--------------|
 | `vim_execute` | command: string | Execute Ex command in Vim instance | When connected |
-| `execute_command` | description: string | Execute natural language commands in Vim | When connected |
+| `execute_command` | description: string | Execute Ex commands in Vim (direct commands only) | When connected |
 | `exit_vim` | action?: 'check'\|'save_and_exit'\|'force_exit' | Exit Vim with unsaved changes handling | When connected |
 | `vim_edit` | file: string, line?: number, column?: number, content?: string | Edit file | When connected |
 | `vim_search` | pattern: string, scope?: 'current'\|'all' | Search in buffers | When connected |
@@ -276,109 +276,37 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 ```
 
 #### 6.2.2 execute_command Tool
-**Purpose**: Execute natural language commands in Vim using intelligent interpretation and command execution  
+**Purpose**: Execute Ex commands directly in Vim  
 **Parameters**:
-- `description` (required): Natural language description of the desired action
+- `description` (required): Ex command to execute (e.g., ":split", ":vsplit", ":wincmd l")
 
 **Behavior**:
-- Converts natural language descriptions into appropriate Vim Ex commands
-- Provides intelligent understanding of user intent with flexible phrasing support
-- Handles variations, typos, and unconventional descriptions
-- Executes multiple commands in sequence for complex operations
-- Includes safety validation to prevent dangerous commands
-- Returns detailed execution results showing both input and generated commands
-- Uses state verification to confirm command execution success
-
-**Natural Language Interpretation Features**:
-- **Flexible Natural Language**: Understands variations like "split vim into 4 windows", "divide screen into 4 parts", "make 4 equal window sections"
-- **Context Understanding**: Interprets intent even with incomplete or informal descriptions
-- **Command Sequencing**: Automatically generates multiple Ex commands for complex operations
-- **Safety Validation**: Blocks potentially dangerous commands and validates against allowed command list
-- **Direct Ex Command Support**: Commands starting with ":" are passed through as direct Ex commands
-- **State-Based Verification**: Compares Vim state before and after command execution to verify success
-
-**Command Execution Process**:
-1. **Interpretation**: Convert natural language to Vim Ex commands
-2. **Validation**: Ensure commands are safe and supported
-3. **Pre-Execution State**: Capture current Vim state
-4. **Command Execution**: Execute each command in sequence
-5. **Post-Execution State**: Capture updated Vim state
-6. **Verification**: Compare states to confirm successful execution
-7. **Result Reporting**: Return detailed execution results with verification status
+- Executes direct Ex commands starting with ":" (colon prefix is optional)
+- Provides structured feedback about command execution results
+- Handles window/tab management commands with contextual feedback
+- Handles substitution commands with execution confirmation
+- Returns detailed execution results
 
 **Supported Command Categories**:
 
 *Window Management*:
-- Window splitting and layout management (split, vsplit)
-- Window navigation and focus control (wincmd h/j/k/l)
-- Window resizing and positioning
-- State verification: Tracks window count changes and active window switches
+- Window splitting (`:split`, `:vsplit`)
+- Window navigation (`:wincmd h/j/k/l`)
+- Provides feedback on window count changes
 
 *Tab Management*:
-- Tab creation with or without specific files (tabnew)
-- Tab navigation and closing (tabnext, tabprevious, tabclose)
+- Tab operations (`:tabnew`, `:tabnext`, `:tabclose`)
 - Multi-tab workflows
-- State verification: Tracks tab count and active tab changes
 
-*File Operations*:
-- Opening, saving, and editing files (edit, w, wq)
-- File navigation and management
-- Buffer operations (bnext, bprevious, bdelete)
-- State verification: Confirms file saves and buffer modifications
-
-*Editor Settings*:
-- Display options (set number, set hlsearch)
-- Vim configuration changes
-- Mode and behavior settings
-- State verification: Assumes success for settings commands
-
-*Navigation and Search*:
-- Cursor movement and positioning  
-- Search and replace operations
-- Buffer and tab navigation
-- State verification: Tracks cursor position and buffer changes
-
-**Safety Features**:
-- **Command Validation**: Only allows safe, predefined Vim Ex commands from whitelist
-- **Dangerous Command Blocking**: Prevents shell execution (!), file deletion, substitution, and other risky operations
-- **Error Handling**: Provides clear error messages for invalid or unsupported requests
-- **Timeout Protection**: Commands have execution timeouts to prevent hanging
-- **State Verification**: Confirms commands worked as expected by comparing before/after states
-
-**Exit Command Handling**:
-- Special handling for exit commands (q, qa, wq, wqa, q!, qa!)
-- Uses socket closure detection instead of JSON response for exit commands
-- Properly handles Vim process termination
-- Distinguishes expected exits from connection failures
-
-**Example Interpretations**:
-```
-"split vim into 4 equal windows" → split, vsplit, wincmd k, vsplit
-"create tabs for foo.md, bar.md, and baz.md" → edit foo.md, tabnew bar.md, tabnew baz.md  
-"show line numbers" → set number
-"save the current file" → w
-"go to the next tab" → tabnext
-"make a vertical split" → vsplit
-```
-
-**Verification Examples**:
-```
-"split" command verification:
-- Before: 1 window
-- After: 2 windows
-- Result: "Window split successful. Windows increased from 1 to 2."
-
-"tabnew" command verification:
-- Before: 2 tabs
-- After: 3 tabs  
-- Result: "New tab created successfully. Tabs increased from 2 to 3."
-```
+*Substitution*:
+- Search and replace operations (`:s/old/new/g`, `:%s/old/new/g`)
+- Confirms substitution execution
 
 **Example Usage**:
 ```json
-{"tool": "execute_command", "arguments": {"description": "split vim into 4 equal windows"}}
-{"tool": "execute_command", "arguments": {"description": "create 3 tabs: one for foo.md, one for bar.md, and one for baz.md"}}
-{"tool": "execute_command", "arguments": {"description": "show line numbers and enable search highlighting"}}
+{"tool": "execute_command", "arguments": {"description": ":split"}}
+{"tool": "execute_command", "arguments": {"description": ":vsplit"}}
+{"tool": "execute_command", "arguments": {"description": ":%s/old/new/g"}}
 ```
 
 #### 6.2.3 exit_vim Tool

@@ -406,104 +406,13 @@ class VimMCPServer {
       return [description.trim().substring(1)];
     }
 
-    const systemPrompt = `You are a Vim command interpreter. Convert natural language descriptions into Vim Ex commands.
-
-RULES:
-1. Return ONLY valid Vim Ex commands, one per line
-2. Do not include colons (:) - just the command part
-3. For complex operations, return multiple commands in sequence
-4. If unsure, return simpler/safer commands
-5. Never return explanations or comments, only commands
-
-COMMON COMMANDS:
-- Window splitting: split (horizontal), vsplit (vertical), wincmd h/j/k/l (navigate)
-- Tabs: tabnew [file], tabnext, tabprevious, tabclose
-- Files: edit [file], w (save), q (quit), wq (save and quit)
-- Buffers: bnext, bprevious, bdelete, buffer [n]
-- Settings: set number, set nonumber, set hlsearch, set nohlsearch
-- Search: /pattern, n (next), N (previous), set nohlsearch (clear)
-
-EXAMPLES:
-"split vim into 4 equal windows" → split\nvsplit\nwincmd k\nvsplit
-"create 3 tabs" → tabnew\ntabnew
-"create tabs for foo.md, bar.md, baz.md" → edit foo.md\ntabnew bar.md\ntabnew baz.md
-"show line numbers" → set number
-"save file" → w
-"go to next tab" → tabnext
-"move to left window" → wincmd h
-
-Convert this description to Vim commands: "${description}"`;
-
-    try {
-      // Use Claude to interpret the natural language
-      const response = await this.callClaude(systemPrompt);
-      
-      // Parse the response into individual commands
-      const commands = response
-        .split('\n')
-        .map(cmd => cmd.trim())
-        .filter(cmd => cmd.length > 0);
-
-      if (commands.length === 0) {
-        throw new Error('No valid commands generated');
-      }
-
-      // Validate commands are safe
-      this.validateCommands(commands);
-      
-      return commands;
-    } catch (error) {
-      throw new Error(`Failed to interpret command "${description}": ${error.message}`);
-    }
-  }
-
-  async callClaude(prompt) {
-    // For now, return a simple interpretation that handles basic cases
-    // In a real implementation, this would call Claude's API
-    
-    // This is a simplified fallback that handles some common cases
-    const desc = prompt.split('"')[1]?.toLowerCase().trim() || '';
-    
-    if (desc.includes('split') && desc.includes('4') && desc.includes('window')) {
-      return 'split\nvsplit\nwincmd k\nvsplit';
-    }
-    if (desc.includes('split') && desc.includes('3') && desc.includes('window')) {
-      return 'split\nsplit';
-    }
-    if (desc.includes('create') && desc.includes('tab') && desc.includes('for')) {
-      const files = desc.match(/for\s+(.+)/)?.[1]?.split(/,|\s+and\s+/) || [];
-      if (files.length > 0) {
-        let result = `edit ${files[0]?.trim().replace(/^(one\s+for\s+|two\s+for\s+|three\s+for\s+)/i, '')}`;
-        for (let i = 1; i < files.length; i++) {
-          const file = files[i]?.trim().replace(/^(one\s+for\s+|two\s+for\s+|three\s+for\s+)/i, '');
-          if (file) {
-            result += `\ntabnew ${file}`;
-          }
-        }
-        return result;
-      }
-    }
-    if (desc.includes('show') && desc.includes('line') && desc.includes('number')) {
-      return 'set number';
-    }
-    if (desc.includes('save') && desc.includes('file')) {
-      return 'w';
-    }
-    if (desc.includes('next') && desc.includes('tab')) {
-      return 'tabnext';
-    }
-    if (desc.includes('vertical') && desc.includes('split')) {
-      return 'vsplit';
-    }
-    if (desc.includes('horizontal') && desc.includes('split')) {
-      return 'split';
-    }
-    if (desc.match(/create\s+(\d+)\s+tab/)) {
-      const num = parseInt(desc.match(/create\s+(\d+)\s+tab/)[1]) - 1;
-      return Array(num).fill('tabnew').join('\n');
-    }
-    
-    throw new Error(`Cannot interpret command: "${desc}". Try being more specific.`);
+    // Since we can't call Claude's API from here, and the fallback implementation
+    // was problematic, we should inform users to use direct commands
+    throw new Error(
+      'Natural language command interpretation is not available. ' +
+      'Please use direct Ex commands starting with ":" (e.g., ":split", ":vsplit") ' +
+      'or use the vim_execute tool with specific Vim commands.'
+    );
   }
 
   validateCommands(commands) {
@@ -994,13 +903,13 @@ Convert this description to Vim commands: "${description}"`;
           },
           {
             name: 'execute_command',
-            description: 'Execute natural language commands in Vim (e.g., "split vim into 4 equal windows", "create 3 tabs for foo.md, bar.md, and baz.md")',
+            description: 'Execute Ex commands in Vim. Supports direct Ex commands starting with ":" (e.g., ":split", ":vsplit", ":tabnew"). Natural language interpretation is not available.',
             inputSchema: {
               type: 'object',
               properties: {
                 description: {
                   type: 'string',
-                  description: 'Natural language description of what you want to do in Vim'
+                  description: 'Ex command to execute (e.g., ":split", ":vsplit", ":wincmd l")'
                 }
               },
               required: ['description']
@@ -1030,7 +939,7 @@ Convert this description to Vim commands: "${description}"`;
     this.startUnixServer();
 
     // Enhanced cleanup function
-    const cleanup = (signal) => {
+    let cleanup = (signal) => {
       console.error(`Received ${signal}, shutting down vim-mcp-server...`);
       
       // Close all Vim connections
@@ -1090,44 +999,10 @@ Convert this description to Vim commands: "${description}"`;
       cleanup('stdin_error');
     });
 
-    // Set up a timeout to kill the process if no MCP communication happens
-    // This prevents orphaned processes from accumulating
-    let lastActivity = Date.now();
-    let activityTimeout;
-
-    const resetActivityTimer = () => {
-      lastActivity = Date.now();
-      if (activityTimeout) {
-        clearTimeout(activityTimeout);
-      }
-      // If no activity for 30 seconds, assume parent is dead
-      activityTimeout = setTimeout(() => {
-        console.error('No MCP activity for 30 seconds, assuming parent died');
-        cleanup('activity_timeout');
-      }, 30000);
-    };
-
-    // Reset timer on any stdin data
-    process.stdin.on('data', () => {
-      resetActivityTimer();
-    });
-
-    // Start the activity timer
-    resetActivityTimer();
-
-    // Clean up timer on exit
-    const originalCleanup = cleanup;
-    cleanup = (signal) => {
-      if (activityTimeout) {
-        clearTimeout(activityTimeout);
-      }
-      originalCleanup(signal);
-    };
-
     // Start MCP server
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Vim MCP Server started with enhanced cleanup');
+    console.error('Vim MCP Server started');
   }
 }
 
