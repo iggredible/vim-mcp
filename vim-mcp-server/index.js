@@ -400,20 +400,6 @@ class VimMCPServer {
     };
   }
 
-  async interpretCommand(description) {
-    // Handle direct Ex commands (starting with :)
-    if (description.trim().startsWith(':')) {
-      return [description.trim().substring(1)];
-    }
-
-    // Since we can't call Claude's API from here, and the fallback implementation
-    // was problematic, we should inform users to use direct commands
-    throw new Error(
-      'Natural language command interpretation is not available. ' +
-      'Please use direct Ex commands starting with ":" (e.g., ":split", ":vsplit") ' +
-      'or use the vim_execute tool with specific Vim commands.'
-    );
-  }
 
   validateCommands(commands) {
     const dangerousCommands = ['!', 'shell', 'system', 'delete', 'substitute'];
@@ -763,37 +749,6 @@ class VimMCPServer {
         }
       }
 
-      if (name === 'execute_command') {
-        if (!this.selectedInstance) {
-          throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
-        }
-
-        const description = args.description;
-        if (!description) {
-          throw new Error('Description parameter is required');
-        }
-
-        try {
-          // Convert natural language to Vim commands
-          const commands = await this.interpretCommand(description);
-          let results = [];
-          
-          for (const command of commands) {
-            const result = await this.executeVimCommand(this.selectedInstance, command);
-            results.push(`> ${command}\n${result.output || 'OK'}`);
-          }
-
-          return {
-            content: [{
-              type: 'text',
-              text: `Executed command: "${description}"\n\n${results.join('\n\n')}`
-            }]
-          };
-        } catch (error) {
-          throw new Error(`Failed to execute command: ${error.message}`);
-        }
-      }
-
       if (name === 'exit_vim') {
         if (!this.selectedInstance) {
           throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
@@ -899,20 +854,6 @@ class VimMCPServer {
                 }
               },
               required: ['command']
-            }
-          },
-          {
-            name: 'execute_command',
-            description: 'Execute Ex commands in Vim. Supports direct Ex commands starting with ":" (e.g., ":split", ":vsplit", ":tabnew"). Natural language interpretation is not available.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                description: {
-                  type: 'string',
-                  description: 'Ex command to execute (e.g., ":split", ":vsplit", ":wincmd l")'
-                }
-              },
-              required: ['description']
             }
           },
           {

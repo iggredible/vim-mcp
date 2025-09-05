@@ -249,7 +249,6 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 | Tool | Parameters | Description | Availability |
 |------|-----------|-------------|--------------|
 | `vim_execute` | command: string | Execute Ex command in Vim instance | When connected |
-| `execute_command` | description: string | Execute Ex commands in Vim (direct commands only) | When connected |
 | `exit_vim` | action?: 'check'\|'save_and_exit'\|'force_exit' | Exit Vim with unsaved changes handling | When connected |
 | `vim_edit` | file: string, line?: number, column?: number, content?: string | Edit file | When connected |
 | `vim_search` | pattern: string, scope?: 'current'\|'all' | Search in buffers | When connected |
@@ -275,41 +274,7 @@ Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
 {"tool": "vim_execute", "arguments": {"command": "set number"}}
 ```
 
-#### 6.2.2 execute_command Tool
-**Purpose**: Execute Ex commands directly in Vim  
-**Parameters**:
-- `description` (required): Ex command to execute (e.g., ":split", ":vsplit", ":wincmd l")
-
-**Behavior**:
-- Executes direct Ex commands starting with ":" (colon prefix is optional)
-- Provides structured feedback about command execution results
-- Handles window/tab management commands with contextual feedback
-- Handles substitution commands with execution confirmation
-- Returns detailed execution results
-
-**Supported Command Categories**:
-
-*Window Management*:
-- Window splitting (`:split`, `:vsplit`)
-- Window navigation (`:wincmd h/j/k/l`)
-- Provides feedback on window count changes
-
-*Tab Management*:
-- Tab operations (`:tabnew`, `:tabnext`, `:tabclose`)
-- Multi-tab workflows
-
-*Substitution*:
-- Search and replace operations (`:s/old/new/g`, `:%s/old/new/g`)
-- Confirms substitution execution
-
-**Example Usage**:
-```json
-{"tool": "execute_command", "arguments": {"description": ":split"}}
-{"tool": "execute_command", "arguments": {"description": ":vsplit"}}
-{"tool": "execute_command", "arguments": {"description": ":%s/old/new/g"}}
-```
-
-#### 6.2.3 exit_vim Tool
+#### 6.2.2 exit_vim Tool
 **Purpose**: Exit Vim instance with proper handling of unsaved changes  
 **Parameters**:
 - `action` (optional): Action to take for unsaved changes
