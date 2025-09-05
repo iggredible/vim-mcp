@@ -48,11 +48,60 @@ Registry          | Instance tracking                       | JSON file
 ### 2.2 Communication Topology
 
 ```
-Claude Code <--[MCP/stdio]--> vim-mcp-server <--[Unix Socket]--> Vim instances
-                                    |
-                                    v
-                              [Registry File]
+┌─────────────────────────────────────────────────────────────────┐
+│                         Claude Code                              │
+│                    (MCP Client / Controller)                     │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             │ MCP Protocol
+                             │ (stdio/JSON-RPC)
+                             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                      vim-mcp-server                              │
+│                    (Node.js MCP Server)                          │
+│                                                                  │
+│  • Creates & listens on /tmp/vim-mcp-server.sock                │
+│  • Manages registry at /tmp/vim-mcp-registry.json               │
+│  • Routes commands between Claude and Vim instances             │
+│  • Provides MCP tools: list_vim_instances, vim_execute, etc.    │
+└────────────┬───────────────────────────────────┬─────────────────┘
+             │                                   │
+             │ Unix Domain Socket                │ Unix Domain Socket
+             │ /tmp/vim-mcp-server.sock         │ /tmp/vim-mcp-server.sock
+             ↓                                   ↓
+┌──────────────────────────┐       ┌──────────────────────────┐
+│      Vim Instance 1      │       │      Vim Instance 2      │
+│   (Unix Socket Client)   │       │   (Unix Socket Client)   │
+│                          │       │                          │
+│  • vim-mcp.vim plugin    │       │  • vim-mcp.vim plugin    │
+│  • ID: file1-proj-12345  │       │  • ID: file2-proj-67890  │
+│  • Connects to server    │       │  • Connects to server    │
+│  • Responds to commands  │       │  • Responds to commands  │
+│  • Sends state updates   │       │  • Sends state updates   │
+└──────────────────────────┘       └──────────────────────────┘
+
+Communication Flow:
+═══════════════════
+
+1. Server Startup:
+   vim-mcp-server starts → creates /tmp/vim-mcp-server.sock
+
+2. Vim Registration:
+   Vim starts → vim-mcp.vim connects → sends registration message
+
+3. Command Execution:
+   Claude → "execute :split" → vim-mcp-server → Vim Instance → result → Claude
+
+4. State Query:
+   Claude → "get_state" → vim-mcp-server → Vim Instance → state data → Claude
 ```
+
+**Key Points:**
+- **vim-mcp-server** is the central hub (true server)
+- **Claude** is an MCP client that controls everything
+- **Vim instances** are Unix socket clients that register with the server
+- The server maintains a registry of all active Vim instances
+- All communication goes through the vim-mcp-server (no direct Claude↔Vim connection)
 
 ## 3. Protocols
 
