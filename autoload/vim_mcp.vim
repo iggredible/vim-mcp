@@ -1,16 +1,4 @@
-" vim-mcp.vim - MCP integration for Vim (Unix socket client)
-" Requires Vim 8+ with +channel or Neovim
-
-if exists('g:loaded_vim_mcp')
-  finish
-endif
-let g:loaded_vim_mcp = 1
-
-" Configuration
-let g:vim_mcp_enabled = get(g:, 'vim_mcp_enabled', 1)
-if !g:vim_mcp_enabled
-  finish
-endif
+" vim_mcp.vim - Autoloaded functions for MCP integration
 
 " Global variables
 let s:instance_id = ''
@@ -74,7 +62,7 @@ function! s:ExecuteCommand(command)
 endfunction
 
 " Get current Vim state
-function! s:GetVimState()
+function! vim_mcp#GetVimState()
   call s:DebugLog('Starting GetVimState()')
   let l:state = {}
 
@@ -184,7 +172,7 @@ function! s:HandleMessage(channel, msg)
 
       if l:message.method == 'get_state'
         call s:DebugLog('Getting Vim state...')
-        let l:response.result = s:GetVimState()
+        let l:response.result = vim_mcp#GetVimState()
         call s:DebugLog('State retrieved, sending response')
       elseif l:message.method == 'execute_command'
         call s:DebugLog('Executing command: ' . l:message.params.command)
@@ -229,7 +217,7 @@ function! s:HandleClose(channel)
 endfunction
 
 " Connect to MCP server
-function! s:Connect()
+function! vim_mcp#Connect()
   if s:channel != v:null && ch_status(s:channel) == 'open'
     return  " Already connected
   endif
@@ -358,18 +346,18 @@ function! s:GetBufferList()
 endfunction
 
 " Send state update to server
-function! s:SendStateUpdate()
+function! vim_mcp#SendStateUpdate()
   if s:connected
     let l:msg = {
           \ 'type': 'state_update',
-          \ 'state': s:GetVimState()
+          \ 'state': vim_mcp#GetVimState()
           \ }
     call s:SendMessage(l:msg)
   endif
 endfunction
 
 " Disconnect from server
-function! s:Disconnect()
+function! vim_mcp#Disconnect()
   if s:channel != v:null
     try
       call ch_close(s:channel)
@@ -381,18 +369,7 @@ function! s:Disconnect()
   endif
 endfunction
 
-" Commands
-command! VimMCPConnect call s:Connect()
-command! VimMCPDisconnect call s:Disconnect()
-command! VimMCPReconnect call s:Disconnect() | call s:Connect()
-command! VimMCPStatus echo 'vim-mcp: ' . (s:connected ? 'Connected to server as ' . s:instance_id : 'Not connected')
-command! VimMCPTestState echo json_encode(s:GetVimState())
-
-" Auto-connect on Vim startup
-augroup vim_mcp
-  autocmd!
-  autocmd VimEnter * call s:Connect()
-  autocmd VimLeavePre * call s:Disconnect()
-  " Send state updates on certain events
-  autocmd BufEnter,BufWrite,WinEnter * call s:SendStateUpdate()
-augroup END
+" Status command
+function! vim_mcp#Status()
+  echo 'vim-mcp: ' . (s:connected ? 'Connected to server as ' . s:instance_id : 'Not connected')
+endfunction
