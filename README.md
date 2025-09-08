@@ -183,6 +183,7 @@ The plugin connects automatically when Vim opens. You can also use:
 - Node.js 18+
 - Unix domain socket support (Linux/macOS)
 - File system write access to `/tmp` directory
+- [claude code](https://www.anthropic.com/claude-code) or similar tools that support MCP
 
 ## Troubleshooting
 
