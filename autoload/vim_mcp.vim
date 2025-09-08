@@ -373,3 +373,39 @@ endfunction
 function! vim_mcp#Status()
   echo 'vim-mcp: ' . (s:connected ? 'Connected to server as ' . s:instance_id : 'Not connected')
 endfunction
+
+" Installation function for vim-plug
+function! vim_mcp#Install() abort
+  " Get the plugin directory (where vim-mcp is installed)
+  let l:plugin_dir = expand('<sfile>:p:h:h')
+  let l:install_script = l:plugin_dir . '/install.sh'
+
+  " Check if install script exists
+  if !filereadable(l:install_script)
+    echohl ErrorMsg
+    echo 'vim-mcp: install.sh not found at ' . l:install_script
+    echohl None
+    return 0
+  endif
+
+  " Make install script executable
+  call system('chmod +x ' . shellescape(l:install_script))
+
+  " Run the install script
+  echo 'vim-mcp: Running installation...'
+  let l:output = system('cd ' . shellescape(l:plugin_dir) . ' && ./install.sh')
+
+  if v:shell_error != 0
+    echohl ErrorMsg
+    echo 'vim-mcp: Installation failed with error code ' . v:shell_error
+    echo l:output
+    echohl None
+    return 0
+  else
+    echohl Function
+    echo 'vim-mcp: Installation completed successfully!'
+    echo 'Please restart Vim and configure Claude Code with the MCP server.'
+    echohl None
+    return 1
+  endif
+endfunction

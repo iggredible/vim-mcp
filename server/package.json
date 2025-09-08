@@ -1,13 +1,27 @@
 {
   "name": "vim-mcp",
   "version": "0.1.0",
-  "description": "MCP server for Vim integration",
+  "description": "MCP Server for Vim integration",
   "main": "index.js",
   "type": "module",
+  "bin": {
+    "vim-mcp": "./bin/vim-mcp"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "chmod +x ./bin/vim-mcp"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iggredible/vim-mcp.git"
+  },
+  "keywords": ["vim", "mcp", "model-context-protocol", "claude"],
+  "author": "Igor Irianto",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

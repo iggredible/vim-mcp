@@ -11,66 +11,81 @@ Simple MCP (Model Context Protocol) integration for Vim and Claude Code.
 
 ## Installation
 
-### 1. Install the Vim Plugin
+### Method 1: Automatic Installation (Recommended)
 
-Add to your `.vimrc` using your preferred plugin manager:
+Add to your `.vimrc` using vim-plug:
 
 ```vim
-" Using vim-plug
-Plug '~/Project/vim-mcp2/vim-mcp-plugin'
-
-" Or manually copy vim-mcp.vim to ~/.vim/plugin/
+Plug 'iggredible/vim-mcp', { 'do': { -> vim_mcp#Install() } }
 ```
 
-### 2. Install Node.js Dependencies
+Then run `:PlugInstall` in Vim. The install hook will automatically:
+- Install Node.js dependencies
+- Attempt global installation of the `vim-mcp` command
+- Show you the correct Claude Code configuration
 
+### Method 2: Manual Installation
+
+1. Clone or download the repository
+2. Run the install script:
 ```bash
-cd ~/Project/vim-mcp2/vim-mcp-server
-npm install
+cd /path/to/vim-mcp
+./install.sh
 ```
 
-### 3. Configure Claude Code
+The script will guide you through the same process and show the appropriate configuration.
 
-Add to your Claude Code MCP settings (`~/.config/claude-code/mcp-servers.json`):
+### Configure Claude Code
 
+After installation, add one of these configurations to your Claude Code MCP settings (`~/.claude.json`):
+
+**If global install succeeded (recommended):**
 ```json
 {
   "mcpServers": {
     "vim-mcp": {
-      "command": "node",
-      "args": ["/Users/iirianto/Project/vim-mcp2/vim-mcp-server/index.js"]
+      "command": "vim-mcp",
+      "args": []
     }
   }
 }
 ```
 
+**If global install failed (fallback):**
+```json
+{
+  "mcpServers": {
+    "vim-mcp": {
+      "command": "node",
+      "args": ["/path/to/vim-mcp/server/bin/vim-mcp"]
+    }
+  }
+}
+```
+
+The install script will show you exactly which configuration to use.
+
 ## Quick Start
 
 ### Step-by-Step Connection Process
 
-1. **Start the MCP server** (run this once):
-   ```bash
-   cd vim-mcp-server
-   node index.js
-   ```
-
-2. **Open Vim instances** (the plugin connects automatically):
+1. **Open Vim instances** (the plugin connects automatically):
    ```bash
    vim file1.txt    # First instance
    vim file2.txt    # Second instance (in another terminal)
    ```
 
-3. **In Claude Code, list available Vim instances:**
+2. **In Claude Code, list available Vim instances:**
    ```
    list vim instances
    ```
 
-4. **If multiple instances are found, select one:**
+3. **If multiple instances are found, select one:**
    ```
    select vim instance <instance-id>
    ```
 
-5. **Start querying your Vim state:**
+4. **Start querying your Vim state:**
    ```
    get vim state
    ```
@@ -195,27 +210,5 @@ The plugin connects automatically when Vim opens. You can also use:
    rm /tmp/vim-mcp-registry.json
    ```
 
-## Development
-
-To run the MCP server directly:
-
-```bash
-cd vim-mcp-server
-node index.js
-```
-
 The server uses stdio for MCP communication and Unix domain sockets for real-time Vim communication.
 
-## Project Structure
-
-```
-vim-mcp2/
-├── vim-mcp-plugin/          # Vim plugin directory
-│   └── vim-mcp.vim         # VimScript plugin file
-├── vim-mcp-server/          # Node.js MCP server
-│   ├── index.js            # Main server file
-│   ├── package.json        # Node.js dependencies
-│   └── package-lock.json   # Dependency lock file
-├── docs/                    # Documentation
-└── README.md               # This file
-```
