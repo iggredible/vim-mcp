@@ -11,44 +11,73 @@ Simple MCP (Model Context Protocol) integration for Vim and Claude Code.
 
 ## Installation
 
-### Method 1: Automatic Installation (Recommended)
+### Prerequisites
 
-Add to your `.vimrc` using vim-plug:
+- **Node.js** >= 18.0.0
+- **Vim** 8.0+ with `+channel` feature OR **Neovim** >= 0.5
+  - Check Vim: `vim --version | grep +channel`
+  - Check Neovim: `nvim --version`
 
+### Install the Vim Plugin
+
+Using vim-plug:
 ```vim
-Plug 'iggredible/vim-mcp', { 'do': { -> vim_mcp#Install() } }
+Plug 'iggredible/vim-mcp'
 ```
 
-Then run `:PlugInstall` in Vim. The install hook will automatically:
+Then restart Vim or run `:PlugInstall` (for vim-plug).
+
+### Install the MCP Server
+
+#### Option 1: Using the Install Script
+
+```bash
+cd ~/.vim/plugged/vim-mcp  # Or wherever your plugin is installed
+./install.sh
+```
+
+The install script will automatically:
+- Check prerequisites (Node.js and Vim versions)
 - Install Node.js dependencies
 - Attempt global installation of the `vim-mcp` command
 - Show you the correct Claude Code configuration
 
-### Method 2: Manual Installation
+#### Option 2: Manual Installation
 
-1. Clone or download the repository
-2. Run the install script:
-```bash
-cd /path/to/vim-mcp
-./install.sh
-```
+If you prefer to install manually or the `install.sh` script doesn't work:
 
-The script will guide you through the same process and show the appropriate configuration.
+1. **Install Node.js dependencies**:
+   ```bash
+   cd ~/.vim/plugged/vim-mcp/server
+   npm install
+   ```
+
+2. **Make the binary executable**:
+   ```bash
+   chmod +x bin/vim-mcp
+   ```
+
+3. **(Optional) Install globally for system-wide `vim-mcp` command** (inside the `/server` directory):
+   ```bash
+   npm install -g .
+   ```
+   
+   If this fails due to permissions, you can either:
+   - Use `sudo npm install -g .` (not recommended)
+   - Skip global installation and use the full path in your config
 
 ### Configure Claude Code
 
 After installation, add one of these configurations to your Claude Code MCP settings (`~/.claude.json`):
 
-**If global install succeeded (recommended):**
+**If global install succeeded (if `vim-mcp` command is available):**
 ```json
-{
   "mcpServers": {
     "vim-mcp": {
       "command": "vim-mcp",
       "args": []
-    }
+    },
   }
-}
 ```
 
 **If global install failed (fallback):**
@@ -64,6 +93,38 @@ After installation, add one of these configurations to your Claude Code MCP sett
 ```
 
 The install script will show you exactly which configuration to use.
+
+## Uninstall
+
+To remove vim-mcp:
+
+1. **Remove the plugin from your `.vimrc`:**
+   ```vim
+   " Delete or comment out this line:
+   " Plug 'iggredible/vim-mcp'
+   ```
+
+2. **Clean up the plugin files:**
+   ```vim
+   :PlugClean
+   ```
+
+3. **Remove the global `vim-mcp` command (if installed):**
+   ```bash
+   npm uninstall -g vim-mcp
+   ```
+
+4. **Remove from Claude Code configuration:**
+   Edit `~/.claude.json` and remove the `vim-mcp` section from `mcpServers`
+
+5. **Clean up temporary files (optional):**
+   ```bash
+   rm -f /tmp/vim-mcp-server.sock
+   rm -f /tmp/vim-mcp-registry.json
+   rm -f /tmp/vim-mcp-preference.txt
+   ```
+
+6. **Restart Vim and Claude Code** to ensure all connections are cleared.
 
 ## Quick Start
 
