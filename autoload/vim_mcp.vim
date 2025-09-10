@@ -219,7 +219,7 @@ endfunction
 " Connect to MCP server
 function! vim_mcp#Connect()
   if s:channel != v:null && ch_status(s:channel) == 'open'
-    return  " Already connected
+    return  " Already connected"
   endif
 
   " Generate instance ID if not set
