@@ -2,14 +2,14 @@
   "name": "vim-mcp",
   "version": "0.1.0",
   "description": "MCP Server for Vim integration",
-  "main": "index.js",
   "type": "module",
+  "main": "index.js",
   "bin": {
-    "vim-mcp": "./bin/vim-mcp"
+    "vim-mcp": "./bin/vim-mcp.js"
   },
   "scripts": {
     "start": "node index.js",
-    "postinstall": "chmod +x ./bin/vim-mcp"
+    "postinstall": "chmod +x ./bin/vim-mcp.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"

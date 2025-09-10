@@ -59,7 +59,7 @@ If you prefer to install manually or the `install.sh` script doesn't work:
 
 3. **(Optional) Install globally for system-wide `vim-mcp` command** (inside the `/server` directory):
    ```bash
-   npm install -g .
+   npm link
    ```
    
    If this fails due to permissions, you can either:
@@ -80,7 +80,7 @@ After installation, add one of these configurations to your Claude Code MCP sett
   }
 ```
 
-**If global install failed (fallback):**
+**If npm link failed (fallback):**
 ```json
 {
   "mcpServers": {
@@ -111,7 +111,7 @@ To remove vim-mcp:
 
 3. **Remove the global `vim-mcp` command (if installed):**
    ```bash
-   npm uninstall -g vim-mcp
+   npm unlink
    ```
 
 4. **Remove from Claude Code configuration:**
