@@ -71,8 +71,8 @@ try_global_install() {
     echo "Attempting global installation..."
     cd server
 
-    if npm install -g . > /dev/null 2>&1; then
-        echo "✓ vim-mcp installed globally"
+    if npm link > /dev/null 2>&1; then
+        echo "✓ vim-mcp command installed globally"
         GLOBAL_INSTALL_SUCCESS=true
     else
         echo "⚠ Global installation failed (permission denied?)"
@@ -110,7 +110,7 @@ show_config() {
         echo '  "mcpServers": {'
         echo '    "vim-mcp": {'
         echo '      "command": "node",'
-        echo "      \"args\": [\"$SCRIPT_DIR/server/bin/vim-mcp\"]"
+        echo "      \"args\": [\"$SCRIPT_DIR/server/bin/vim-mcp.js\"]"
         echo '    }'
         echo '  }'
         echo '}'
@@ -131,7 +131,7 @@ main() {
     install_server
 
     # Make bin executable
-    chmod +x server/bin/vim-mcp
+    chmod +x server/bin/vim-mcp.js
 
     try_global_install
     show_config

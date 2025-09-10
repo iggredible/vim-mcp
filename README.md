@@ -9,14 +9,30 @@ Simple MCP (Model Context Protocol) integration for Vim and Claude Code.
 - Automatic instance selection when only one Vim is running
 - Multiple Vim instance support with selection prompts
 
+### Tools
+
+1. `list_vim_instances`
+2. `select_vim_instance`
+3. `get_vim_state`
+4. `vim_execute`
+5. `exit_vim`
+
+### Resources
+
+1. `vim://instances` - List of all available Vim instances
+2. `vim://state` - Current state of the selected Vim instance
+3. `vim://buffers` - List of all buffers in the selected Vim instance
+4. `vim://tabs` - List of all tabs in the selected Vim instance
+
 ## Installation
 
 ### Prerequisites
 
-- **Node.js** >= 18.0.0
-- **Vim** 8.0+ with `+channel` feature OR **Neovim** >= 0.5
-  - Check Vim: `vim --version | grep +channel`
-  - Check Neovim: `nvim --version`
+- Vim 8+ with `+channel` feature OR Neovim 0.5+
+- Node.js 18+
+- Unix domain socket support (Linux/macOS)
+- File system write access to `/tmp` directory
+- [claude code](https://www.anthropic.com/claude-code) / [claude desktop](https://claude.ai/download) or similar tools that support MCP
 
 ### Install the Vim Plugin
 
@@ -62,9 +78,7 @@ If you prefer to install manually or the `install.sh` script doesn't work:
    npm link
    ```
    
-   If this fails due to permissions, you can either:
-   - Use `sudo npm install -g .` (not recommended)
-   - Skip global installation and use the full path in your config
+   If this fails due to permissions or whatever reason, you can skip global installation and use the full path in your config.
 
 ### Configure Claude Code
 
@@ -86,7 +100,7 @@ After installation, add one of these configurations to your Claude Code MCP sett
   "mcpServers": {
     "vim-mcp": {
       "command": "node",
-      "args": ["/path/to/vim-mcp/server/bin/vim-mcp"]
+      "args": ["/some/path/.vim/plugged/vim-mcp/server/bin/vim-mcp"]
     }
   }
 }
@@ -115,7 +129,7 @@ To remove vim-mcp:
    ```
 
 4. **Remove from Claude Code configuration:**
-   Edit `~/.claude.json` and remove the `vim-mcp` section from `mcpServers`
+   Edit `~/.claude.json` (and/or `claude_desktop_config.json`) and remove the `vim-mcp` section from `mcpServers`
 
 5. **Clean up temporary files (optional):**
    ```bash
@@ -143,72 +157,36 @@ To remove vim-mcp:
 
 3. **If multiple instances are found, select one:**
    ```
-   select vim instance <instance-id>
+   select vim instance file1-vim-12345
+   connect to the first one pls
    ```
 
-4. **Start querying your Vim state:**
-   ```
-   get vim state
-   ```
+### Things you can do in client
 
-### Basic Commands in Claude Code
+From the client (claude code), you can:
 
-1. **Instance Management:**
-   - `list vim instances` - Shows all connected Vim instances
-   - `select vim instance <id>` - Connect to a specific instance
-   - `get vim state` - Get complete state of selected instance
-   - `exit vim` - Exit Vim with proper handling of unsaved changes
+1. **Manage instances:**
+    - "List vim instances"
+    - "Connect to the first one pls"
+    - "Select the one with README.md open"
 
-2. **Vim Control:**
-   - `execute vim command <ex-command>` - Execute any Ex command in Vim
-   - `execute command <ex-command>` - Execute direct Ex commands (e.g., ":split", ":vsplit")
-   - `exit vim` - Safely exit Vim with unsaved changes detection
+2. **Control Vim:**
+    - "Split into two windows vertically"
+    - "execute vim command <ex-command>"
+    - "HELP ME EXIT VIM!!!"
 
-3. **Query Examples:**
+3. **Query about Vim:**
    - "How many buffers do I have?"
    - "What buffers are open?"
    - "What is my cursor position?"
    - "Show me the current buffer content"
+   - "How many lines are in the active buffer?"
+   - "What language is the file written in?"
    - "What windows are open?"
 
-### Direct Ex Command Execution
+### vim-mcp can help you exit Vim!!
 
-The `execute command` feature allows you to run Vim Ex commands directly:
-
-**Window Management:**
-```
-execute command ":split"          # Horizontal split
-execute command ":vsplit"         # Vertical split  
-execute command ":wincmd h"       # Move to left window
-execute command ":wincmd l"       # Move to right window
-```
-
-**Tab Management:**
-```
-execute command ":tabnew"         # Create new tab
-execute command ":tabnext"        # Switch to next tab
-execute command ":tabprev"        # Switch to previous tab
-execute command ":tabclose"       # Close current tab
-```
-
-**File & Settings:**
-```
-execute command ":w"              # Save current file
-execute command ":set number"     # Show line numbers
-execute command ":set hlsearch"   # Enable search highlighting
-execute command ":e filename"     # Open file
-```
-
-**Buffer Operations:**
-```
-execute command ":bnext"          # Go to next buffer
-execute command ":bprev"          # Go to previous buffer
-execute command ":bdelete"        # Delete current buffer
-```
-
-### Safe Exit Feature
-
-The `exit vim` command provides safe exit functionality with three modes:
+You can finally exit Vim! Woot!! The `exit_vim` tool provides safe exit functionality with three modes:
 
 - **Default (check)**: Checks for unsaved changes and warns you before exiting
 - **Save and exit**: Saves all modified buffers and exits (`exit vim save_and_exit`)  
@@ -237,40 +215,4 @@ The plugin connects automatically when Vim opens. You can also use:
 3. Vim sends registration and state updates to the server
 4. The server maintains active connections to all Vim instances
 5. Claude Code communicates with the MCP server via Model Context Protocol
-
-## Requirements
-
-- Vim 8+ with `+channel` feature OR Neovim 0.5+
-- Node.js 18+
-- Unix domain socket support (Linux/macOS)
-- File system write access to `/tmp` directory
-- [claude code](https://www.anthropic.com/claude-code) or similar tools that support MCP
-
-## Troubleshooting
-
-1. **No Vim instances found:**
-   - Make sure Vim is running with the plugin loaded
-   - Check `:VimMCPStatus` in Vim to see connection status
-   - Run `:VimMCPReconnect` in Vim to connect to the server
-   - Verify the MCP server is running: `node vim-mcp-server/index.js`
-
-2. **Multiple Vim instances not showing up:**
-   - Each Vim instance must connect to `/tmp/vim-mcp-server.sock`
-   - Run `:VimMCPReconnect` in each Vim instance to refresh connection
-   - Old instances may be using outdated socket paths - reconnect fixes this
-   - Check `:VimMCPStatus` in each Vim to confirm connection
-
-3. **Connection errors:**
-   - Check if the MCP server is running: `node vim-mcp-server/index.js`
-   - Verify the socket file exists: `ls -la /tmp/vim-mcp-server.sock`
-   - Check socket file permissions: should be user-readable/writable (600)
-   - Check for errors in Vim: `:messages`
-
-4. **Clean up stale files:**
-   ```bash
-   rm /tmp/vim-mcp-server.sock
-   rm /tmp/vim-mcp-registry.json
-   ```
-
-The server uses stdio for MCP communication and Unix domain sockets for real-time Vim communication.
 
