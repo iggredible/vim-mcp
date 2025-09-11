@@ -1,0 +1,158 @@
+*vim-mcp.txt*	MCP integration for Vim and Claude Code
+
+==============================================================================
+CONTENTS						*vim-mcp-contents*
+
+1. Introduction		|vim-mcp-introduction|
+2. Installation		|vim-mcp-installation|
+3. Commands		|vim-mcp-commands|
+4. Claude Tools		|vim-mcp-claude-tools|
+5. Configuration	|vim-mcp-configuration|
+6. Troubleshooting	|vim-mcp-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION						*vim-mcp-introduction*
+
+vim-mcp provides Model Context Protocol (MCP) integration between Claude Code
+and Vim editor instances. It allows Claude to read and manipulate Vim state
+through standardized MCP resources and tools.
+
+Features:
+- Connect Claude Code to your Vim instances
+- Query Vim state (buffers, windows, cursor position)
+- Execute Ex commands from Claude
+- Automatic instance selection when only one Vim is running
+- Multiple Vim instance support with selection prompts
+
+==============================================================================
+2. INSTALLATION						*vim-mcp-installation*
+
+Prerequisites:
+- Vim 8+ with `+channel` feature OR Neovim 0.5+
+- Node.js 18+
+- Unix domain socket support (Linux/macOS)
+
+Install with vim-plug:
+>
+	Plug 'iggredible/vim-mcp'
+<
+Run install script:
+>
+	cd ~/.vim/plugged/vim-mcp
+	./install.sh
+<
+Add to Claude Code config (~/.claude.json):
+>
+	"mcpServers": {
+	  "vim-mcp": {
+	    "command": "vim-mcp",
+	    "args": []
+	  }
+	}
+<
+Alternative/fallback configuration (if npm link failed):
+>
+	{
+	  "mcpServers": {
+	    "vim-mcp": {
+	      "command": "node",
+	      "args": ["/some/path/.vim/plugged/vim-mcp/server/bin/vim-mcp"]
+	    }
+	  }
+	}
+<
+==============================================================================
+3. COMMANDS						*vim-mcp-commands*
+
+							*:VimMCPStatus*
+:VimMCPStatus		Check connection status to MCP server
+
+							*:VimMCPConnect*
+:VimMCPConnect		Manually connect to MCP server
+
+							*:VimMCPDisconnect*
+:VimMCPDisconnect	Disconnect from MCP server
+
+							*:VimMCPReconnect*
+:VimMCPReconnect	Reconnect to MCP server
+
+The plugin connects automatically when Vim opens. Manual commands are
+typically not needed unless troubleshooting connection issues.
+
+==============================================================================
+4. CLAUDE TOOLS						*vim-mcp-claude-tools*
+
+Available tools in Claude Code:
+
+Instance Management:
+- list_vim_instances	List all connected Vim instances
+- select_vim_instance	Connect to specific instance
+
+Vim Control:
+- get_vim_state		Get current Vim state
+- vim_execute		Execute Ex commands
+- exit_vim		Exit Vim (with save options)
+
+Example Claude requests:
+>
+	"List vim instances"
+	"Connect to the first one"
+	"What buffers are open?"
+	"Split window vertically"
+	"Exit vim save_and_exit"
+<
+Available MCP Resources:
+- vim://instances	List of all Vim instances
+- vim://state		Current state of selected instance
+- vim://buffers		All buffers information
+- vim://tabs		All tabs information
+
+==============================================================================
+5. CONFIGURATION					*vim-mcp-configuration*
+
+Socket and Registry Paths:
+- Server socket: /tmp/vim-mcp-server.sock
+- Registry file: /tmp/vim-mcp-registry.json
+- Preference file: /tmp/vim-mcp-preference.txt
+
+Instance ID Format:
+{filename}-{project}-{pid}
+Example: index-myproject-12345
+
+The plugin connects automatically on Vim startup. No configuration is
+typically needed in Vim itself.
+
+==============================================================================
+6. TROUBLESHOOTING					*vim-mcp-troubleshooting*
+
+Connection Issues:
+1. Check server is running:
+>
+	ps aux | grep vim-mcp
+<
+2. Verify socket exists:
+>
+	ls -la /tmp/vim-mcp-server.sock
+<
+3. Check Vim channel support:
+>
+	:echo has('channel')
+<
+Should return 1 for Vim 8+, or check Neovim version >= 0.5
+
+4. Clean up stale files:
+>
+	rm -f /tmp/vim-mcp-server.sock
+	rm -f /tmp/vim-mcp-registry.json
+	rm -f /tmp/vim-mcp-preference.txt
+<
+5. Restart Claude Code and Vim after cleanup
+
+Common Error Codes:
+- 1001: No Vim instance selected
+- 1002: Vim instance not found
+- 1003: Vim connection lost
+- 1004: Command execution failed
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
