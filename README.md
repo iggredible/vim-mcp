@@ -9,6 +9,10 @@ Simple MCP (Model Context Protocol) integration for Vim and Claude Code.
 - Automatic instance selection when only one Vim is running
 - Multiple Vim instance support with selection prompts
 
+### Overview
+
+For a detailed overview, see [vim-mcp overview](doc/vim-mcp-overview.md).
+
 ### Tools
 
 1. `list_vim_instances`
@@ -23,6 +27,16 @@ Simple MCP (Model Context Protocol) integration for Vim and Claude Code.
 2. `vim://state` - Current state of the selected Vim instance
 3. `vim://buffers` - List of all buffers in the selected Vim instance
 4. `vim://tabs` - List of all tabs in the selected Vim instance
+
+### How It Works
+
+1. The MCP server starts a Unix socket server at `/tmp/vim-mcp-server.sock`
+2. Each Vim instance connects to the server as a Unix socket client
+3. Vim sends registration and state updates to the server
+4. The server maintains active connections to all Vim instances
+5. Claude Code communicates with the MCP server via Model Context Protocol
+
+
 
 ## Installation
 
@@ -63,22 +77,20 @@ The install script will automatically:
 If you prefer to install manually or the `install.sh` script doesn't work:
 
 1. **Install Node.js dependencies**:
-   ```bash
-   cd ~/.vim/plugged/vim-mcp/server
-   npm install
-   ```
 
-2. **Make the binary executable**:
-   ```bash
-   chmod +x bin/vim-mcp
-   ```
+```bash
+cd ~/.vim/plugged/vim-mcp/server
+npm install
+```
 
-3. **(Optional) Install globally for system-wide `vim-mcp` command** (inside the `/server` directory):
-   ```bash
-   npm link
-   ```
-   
-   If this fails due to permissions or whatever reason, you can skip global installation and use the full path in your config.
+`npm install` should also run `chmod +x bin/vim-mcp`
+
+2. **(Optional) Install globally for system-wide `vim-mcp` command** (inside the `/server` directory):
+```bash
+npm link
+```
+
+If this fails due to permissions or whatever reason, you can skip global installation and use the full path in your config.
 
 ### Configure Claude Code
 
@@ -125,7 +137,7 @@ To remove vim-mcp:
 
 3. **Remove the global `vim-mcp` command (if installed):**
    ```bash
-   npm unlink
+   npm unlink vim-mcp
    ```
 
 4. **Remove from Claude Code configuration:**
@@ -207,12 +219,4 @@ The plugin connects automatically when Vim opens. You can also use:
 - `:VimMCPConnect` - Manually connect to server
 - `:VimMCPDisconnect` - Disconnect from server
 - `:VimMCPReconnect` - Reconnect to server
-
-## How It Works
-
-1. The MCP server starts a Unix socket server at `/tmp/vim-mcp-server.sock`
-2. Each Vim instance connects to the server as a Unix socket client
-3. Vim sends registration and state updates to the server
-4. The server maintains active connections to all Vim instances
-5. Claude Code communicates with the MCP server via Model Context Protocol
 
