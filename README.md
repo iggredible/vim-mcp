@@ -15,6 +15,16 @@ How it works:
 4. The server maintains active connections to all Vim instances
 5. Claude Code communicates with the MCP server via Model Context Protocol
 
+### Demo
+
+List and select Vim instance:
+<p><img src="https://github.com/user-attachments/assets/1f1e7335-b256-4b7f-be57-bf49cdee1c69" alt="List and select Vim instances" width="75%"></p>
+
+You can (finally) exit Vim!
+<p><img src="https://github.com/user-attachments/assets/19436984-1464-41f8-b12a-3d15a54b79cc" alt="List and select Vim instances" width="75%"></p>
+
+For more, check out the [demo wiki page](https://github.com/iggredible/vim-mcp/wiki/Demo)
+
 ### Overview
 
 For a detailed overview, see [vim-mcp overview](doc/vim-mcp-overview.md).
