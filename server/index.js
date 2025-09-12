@@ -30,18 +30,6 @@ class VimMCPServer {
     this.setupHandlers();
   }
 
-  loadRegistry() {
-    try {
-      if (fs.existsSync(REGISTRY_PATH)) {
-        const data = fs.readFileSync(REGISTRY_PATH, 'utf8');
-        return JSON.parse(data);
-      }
-    } catch (error) {
-      console.error('Error loading registry:', error);
-    }
-    return {};
-  }
-
   saveRegistry() {
     try {
       const registry = {};
@@ -90,10 +78,10 @@ class VimMCPServer {
       }
     }
     this.vimConnections = valid;
-    
+
     // Clean registry to only contain currently connected instances
     this.saveRegistry();
-    
+
     return valid;
   }
 
@@ -167,7 +155,7 @@ class VimMCPServer {
 
   async executeExitCommand(instanceId, command) {
     const conn = this.vimConnections.get(instanceId);
-    
+
     return new Promise((resolve, reject) => {
       const requestId = Date.now();
       const request = JSON.stringify({
@@ -178,7 +166,7 @@ class VimMCPServer {
 
       // Mark this instance as pending exit
       this.pendingExits.add(instanceId);
-      
+
       // For exit commands, listen for socket closure instead of JSON response
       const closeHandler = () => {
         // Socket closed - this indicates successful exit
@@ -215,7 +203,7 @@ class VimMCPServer {
 
   async executeCommandWithStateVerification(instanceId, command) {
     const conn = this.vimConnections.get(instanceId);
-    
+
     // Get state before command execution
     let beforeState;
     try {
@@ -240,10 +228,10 @@ class VimMCPServer {
         try {
           // Get state after command execution
           const afterState = await this.requestVimState(instanceId);
-          
+
           // Verify the command worked by comparing states
           const verification = this.verifyCommandExecution(command, beforeState, afterState);
-          
+
           if (verification.success) {
             resolve({
               success: true,
@@ -265,12 +253,12 @@ class VimMCPServer {
 
   verifyCommandExecution(command, beforeState, afterState) {
     const cmd = command.trim().toLowerCase();
-    
+
     // Window splitting commands
     if (cmd === 'split' || cmd.startsWith('split ')) {
       const beforeWindows = beforeState.windows ? beforeState.windows.length : 0;
       const afterWindows = afterState.windows ? afterState.windows.length : 0;
-      
+
       if (afterWindows > beforeWindows) {
         return {
           success: true,
@@ -282,11 +270,11 @@ class VimMCPServer {
         message: `Window split may have failed. Window count unchanged: ${beforeWindows}.`
       };
     }
-    
+
     if (cmd === 'vsplit' || cmd.startsWith('vsplit ')) {
       const beforeWindows = beforeState.windows ? beforeState.windows.length : 0;
       const afterWindows = afterState.windows ? afterState.windows.length : 0;
-      
+
       if (afterWindows > beforeWindows) {
         return {
           success: true,
@@ -298,12 +286,12 @@ class VimMCPServer {
         message: `Vertical split may have failed. Window count unchanged: ${beforeWindows}.`
       };
     }
-    
+
     // Tab commands
     if (cmd === 'tabnew' || cmd.startsWith('tabnew ')) {
       const beforeTabs = beforeState.tabs ? beforeState.tabs.length : 0;
       const afterTabs = afterState.tabs ? afterState.tabs.length : 0;
-      
+
       if (afterTabs > beforeTabs) {
         return {
           success: true,
@@ -315,11 +303,11 @@ class VimMCPServer {
         message: `Tab creation may have failed. Tab count unchanged: ${beforeTabs}.`
       };
     }
-    
+
     if (cmd === 'tabnext' || cmd === 'tabprevious') {
       const beforeActiveTab = beforeState.tabs ? beforeState.tabs.findIndex(t => t.active) : -1;
       const afterActiveTab = afterState.tabs ? afterState.tabs.findIndex(t => t.active) : -1;
-      
+
       if (beforeActiveTab !== afterActiveTab) {
         return {
           success: true,
@@ -331,12 +319,12 @@ class VimMCPServer {
         message: `Tab navigation may have failed or already at ${cmd === 'tabnext' ? 'last' : 'first'} tab.`
       };
     }
-    
+
     // File operations
     if (cmd.startsWith('edit ') || cmd.startsWith('e ')) {
       const filename = cmd.split(' ')[1];
       const afterBuffer = afterState.current_buffer;
-      
+
       if (afterBuffer && (afterBuffer.name.endsWith(filename) || afterBuffer.name.includes(filename))) {
         return {
           success: true,
@@ -348,7 +336,7 @@ class VimMCPServer {
         message: `File opening may have failed. Current buffer: ${afterBuffer ? afterBuffer.name : 'unknown'}`
       };
     }
-    
+
     // Settings commands
     if (cmd.startsWith('set ')) {
       // For settings commands, assume success if no error occurred
@@ -357,7 +345,7 @@ class VimMCPServer {
         message: `Setting command executed: ${command}`
       };
     }
-    
+
     // Window navigation commands
     if (cmd.startsWith('wincmd ')) {
       // Check if current window/cursor changed
@@ -365,7 +353,7 @@ class VimMCPServer {
       const afterCursor = afterState.cursor || [0, 0];
       const beforeCurrentBuf = beforeState.current_buffer ? beforeState.current_buffer.id : null;
       const afterCurrentBuf = afterState.current_buffer ? afterState.current_buffer.id : null;
-      
+
       if (beforeCurrentBuf !== afterCurrentBuf) {
         return {
           success: true,
@@ -377,7 +365,7 @@ class VimMCPServer {
         message: `Window navigation command executed: ${command}`
       };
     }
-    
+
     // Write/save commands
     if (cmd === 'w' || cmd === 'write') {
       const afterBuffer = afterState.current_buffer;
@@ -392,38 +380,12 @@ class VimMCPServer {
         message: `Write command executed: ${command}`
       };
     }
-    
+
     // Generic fallback - assume success if state is retrievable
     return {
       success: true,
       message: `Command executed successfully: ${command}`
     };
-  }
-
-
-  validateCommands(commands) {
-    const dangerousCommands = ['!', 'shell', 'system', 'delete', 'substitute'];
-    const validCommandPrefixes = [
-      'set', 'split', 'vsplit', 'wincmd', 'tabnew', 'tabnext', 'tabprevious', 
-      'tabclose', 'edit', 'w', 'q', 'wq', 'bnext', 'bprevious', 'bdelete',
-      'buffer', 'close', 'quit', 'write', 'new', 'vnew'
-    ];
-
-    for (const command of commands) {
-      // Check for dangerous commands
-      if (dangerousCommands.some(danger => command.includes(danger))) {
-        throw new Error(`Potentially dangerous command: ${command}`);
-      }
-
-      // Check if command starts with a valid prefix
-      const isValid = validCommandPrefixes.some(prefix => 
-        command.startsWith(prefix + ' ') || command === prefix
-      );
-
-      if (!isValid) {
-        throw new Error(`Invalid or unsupported command: ${command}`);
-      }
-    }
   }
 
   startUnixServer() {
@@ -496,7 +458,7 @@ class VimMCPServer {
         if (instanceId) {
           const wasExpectedExit = this.pendingExits.has(instanceId);
           console.error(`Vim instance disconnected: ${instanceId}${wasExpectedExit ? ' (expected exit)' : ''}`);
-          
+
           this.vimConnections.delete(instanceId);
           this.pendingExits.delete(instanceId);
           this.saveRegistry();
@@ -665,10 +627,10 @@ class VimMCPServer {
 
         // If multiple instances, show selection prompt
         if (instances.length > 1 && !this.selectedInstance) {
-          const instanceList = instances.map(i => 
+          const instanceList = instances.map(i =>
             `- ${i.id} (PID: ${i.pid})\n  File: ${i.main_file}\n  CWD: ${i.cwd}`
           ).join('\n');
-          
+
           return {
             content: [{
               type: 'text',
@@ -882,7 +844,7 @@ class VimMCPServer {
     // Enhanced cleanup function
     let cleanup = (signal) => {
       console.error(`Received ${signal}, shutting down vim-mcp-server...`);
-      
+
       // Close all Vim connections
       for (const [instanceId, conn] of this.vimConnections.entries()) {
         if (conn.socket && !conn.socket.destroyed) {
@@ -917,13 +879,13 @@ class VimMCPServer {
     process.on('SIGINT', () => cleanup('SIGINT'));
     process.on('SIGTERM', () => cleanup('SIGTERM'));
     process.on('SIGHUP', () => cleanup('SIGHUP'));
-    
+
     // Handle uncaught exceptions and unhandled rejections
     process.on('uncaughtException', (err) => {
       console.error('Uncaught exception:', err);
       cleanup('uncaughtException');
     });
-    
+
     process.on('unhandledRejection', (reason, promise) => {
       console.error('Unhandled rejection at:', promise, 'reason:', reason);
       cleanup('unhandledRejection');
