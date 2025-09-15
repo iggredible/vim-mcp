@@ -40,6 +40,9 @@ function! s:ExecuteCommand(command)
   call s:DebugLog('Executing command: ' . a:command)
 
   try
+    " Add the command to Vim's command-line history
+    call histadd(':', a:command)
+
     " Capture command output
     redir => l:output
     silent execute a:command
@@ -52,6 +55,10 @@ function! s:ExecuteCommand(command)
       \ }
   catch
     call s:DebugLog('Error executing command: ' . v:exception)
+
+    " Add to history even if command failed
+    call histadd(':', a:command)
+
     return {
       \ 'success': 0,
       \ 'error': v:exception,

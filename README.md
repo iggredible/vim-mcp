@@ -1,7 +1,7 @@
 # vim-mcp
 
 Simple MCP (Model Context Protocol) integration for Vim and Claude Code.
-
+ 
 ## Features
 
 - Connect Claude Code to one of your Vim instances
@@ -24,6 +24,33 @@ You can (finally) exit Vim!
 <p><img src="https://github.com/user-attachments/assets/19436984-1464-41f8-b12a-3d15a54b79cc" alt="List and select Vim instances" width="75%"></p>
 
 For more, check out the [demo wiki page](https://github.com/iggredible/vim-mcp/wiki/Demo)
+
+### Why would anyone need this?
+
+Ok, I get what it does, but why do we need this?
+
+To be frank, I didn't think much when I started this. I initially wanted to learn how MCP servers work [by doing](https://en.wikipedia.org/wiki/Learning-by-doing). So I started making this without thinking much of its utility.
+
+But here's one scenario where it may be useful:
+
+Sometimes you want to perform a complex Vim command that would take a long time to concoct. Claude can easily do it if you can describe what you want to do. For example, maybe you want to substitute "(test foobar)" with square brackets ONLY IF they come after a 3rd level Markdown header. That's not something I can easily cook up in seconds... but Claude can! Without vim-mcp, Claude would probably print out the command, then I'd have to copy that command somehow, and paste that in Vim. 
+
+With vim-mcp, in Claude, I can prompt:
+```
+In README.md, substitute the set of parentheses `(SOME TEXT)` with square brackets `[SOME TEXT]`, where SOME TEXT says "test foobar"; do this if the strings come after a 3rd-level header markdown.
+```
+
+And that's it! When I did it, Claude came up with the `g` command and executed it for me.
+```
+vim-mcp - vim_execute (MCP)(command: "g/^### /,/^#\\{1,3\\} \\|^$/s/(test foobar)/[test foobar]/g")
+  ⎿  Command executed successfully: g/^### /,/^#\{1,3\} \|^$/s/(test foobar)/[test foobar]/g
+```
+
+Bonus: the executed commands aree stored in the command history so you can go back and re-execute them or modify them.
+
+What if you later decided, "Hey, I actually don't want to substitute them with square brackets `[]`, I want to substitute them with curly brackets `{}` instead! You can just access the command history (`q:`, `:history`, or `:` then press up/down) and then make necessary modifications.
+
+So I did `:`, then pressed the up arrow a few times until I saw the command that vim-mcp executed, and changed it to `:g/^### /,/^#\{1,3\} \|^$/s/(test foobar)/{test foobar}/g`. Done! 
 
 ### Overview
 
