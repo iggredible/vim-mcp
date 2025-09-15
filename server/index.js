@@ -767,6 +767,82 @@ class VimMCPServer {
         }
       }
 
+      if (name === 'vim_search_help') {
+        if (!this.selectedInstance) {
+          throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
+        }
+
+        const query = args.query;
+        if (!query) {
+          throw new Error('Query parameter is required');
+        }
+
+        try {
+          const conn = this.vimConnections.get(this.selectedInstance);
+          if (!conn || !conn.socket || conn.socket.destroyed) {
+            throw new Error(`Instance ${this.selectedInstance} not connected`);
+          }
+
+          return new Promise((resolve, reject) => {
+            const requestId = Date.now();
+            const request = JSON.stringify({
+              id: requestId,
+              method: 'search_help',
+              params: { query: query }
+            }) + '\n';
+
+            // Set up one-time listener for this specific request
+            const responseHandler = (data) => {
+              try {
+                const lines = data.toString().split('\n');
+                for (const line of lines) {
+                  if (line.trim()) {
+                    const response = JSON.parse(line);
+                    if (response.id === requestId) {
+                      conn.socket.removeListener('data', responseHandler);
+                      if (response.error) {
+                        reject(new Error(response.error.message));
+                      } else {
+                        const result = response.result;
+                        if (result.success) {
+                          resolve({
+                            content: [{
+                              type: 'text',
+                              text: `Found help for '${query}':\n\nTag: ${result.tag}\nFile: ${result.file}\nLine: ${result.line}\n\nHelp window opened in Vim.`
+                            }]
+                          });
+                        } else {
+                          resolve({
+                            content: [{
+                              type: 'text',
+                              text: `No help found for '${query}'. Try:\n- A more specific search term\n- Using :helpgrep in Vim for pattern search\n- Checking available help tags with :help`
+                            }]
+                          });
+                        }
+                      }
+                      return;
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('Error parsing response:', e);
+              }
+            };
+
+            conn.socket.on('data', responseHandler);
+            conn.socket.write(request);
+
+            // Timeout after 3 seconds
+            setTimeout(() => {
+              conn.socket.removeListener('data', responseHandler);
+              reject(new Error('Timeout waiting for help search response'));
+            }, 3000);
+          });
+        } catch (error) {
+          throw new Error(`Failed to search help: ${error.message}`);
+        }
+      }
+
       throw new Error(`Unknown tool: ${name}`);
     });
 
@@ -830,6 +906,20 @@ class VimMCPServer {
                   enum: ['check', 'save_and_exit', 'force_exit']
                 }
               }
+            }
+          },
+          {
+            name: 'vim_search_help',
+            description: 'Search Vim help documentation for a topic and open the most relevant help section',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description: 'The help topic to search for (e.g., "channel", "buffers", "windows")'
+                }
+              },
+              required: ['query']
             }
           }
         ]

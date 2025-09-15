@@ -64,6 +64,7 @@ Tools:
 3. `get_vim_state`
 4. `vim_execute`
 5. `exit_vim`
+6. `vim_search_help`
 
 Resources:
 1. `vim://instances` - List of all available Vim instances
