@@ -29,13 +29,14 @@ For more, check out the [demo wiki page](https://github.com/iggredible/vim-mcp/w
 
 Ok, I get what it does, but why do we need this?
 
-To be frank, I didn't think much when I started this. I initially wanted to learn how MCP servers work [by doing](https://en.wikipedia.org/wiki/Learning-by-doing). So I started making this without thinking much of its utility.
+If you're trying to do basic Vim operation like: typing "split the window in half" (24 keystrokes) vs running :sp / :vs (3 kevstrokes), then vim-mcp won't be of much help. Where vim-cmp shines is when **the # keystrokes is unknown**. When you can only describe what you want to do but do not know exactly what to do. Things like complex regex/ macros/ lookups, help semantic search, etc - it's faster to tell Al what you're trying to accomplish than trial-and-error. I think the word I'm looking for is circumlocution?
 
-But here's one scenario where it may be useful:
+Here's one scenario where it may be useful:
 
-Sometimes you want to perform a complex Vim command that would take a long time to concoct. Claude can easily do it if you can describe what you want to do. For example, maybe you want to substitute "(test foobar)" with square brackets ONLY IF they come after a 3rd level Markdown header. That's not something I can easily cook up in seconds... but Claude can! Without vim-mcp, Claude would probably print out the command, then I'd have to copy that command somehow, and paste that in Vim. 
+Suppose you want to perform a complex Vim command that otherwise will take a long time to construct. Claude can easily do it if you can describe what you want to do. Maybe you want to substitute "(test foobar)" with square brackets ONLY IF they come after a 3rd level Markdown header. That's not something I can easily cook up in seconds... but Claude can! Without vim-mcp, Claude would probably print out the command, then I'd have to copy that command somehow, and paste that in Vim. 
 
 With vim-mcp, in Claude, I can prompt:
+
 ```
 In README.md, substitute the set of parentheses `(SOME TEXT)` with square brackets `[SOME TEXT]`, where SOME TEXT says "test foobar"; do this if the strings come after a 3rd-level header markdown.
 ```
