@@ -92,6 +92,8 @@ Vim Control:
 - get_vim_state		Get current Vim state
 - vim_execute		Execute Ex commands
 - exit_vim		Exit Vim (with save options)
+- vim_search_help	Search Vim help documentation
+- vim_record_macro	Record and execute Vim macros
 
 Example Claude requests:
 >

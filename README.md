@@ -66,6 +66,7 @@ Tools:
 4. `vim_execute`
 5. `exit_vim`
 6. `vim_search_help`
+7. `vim_record_macro`
 
 Resources:
 1. `vim://instances` - List of all available Vim instances
@@ -226,7 +227,17 @@ From the client (claude code), you can:
     - "execute vim command <ex-command>"
     - "HELP ME EXIT VIM!!!"
 
-3. Query about Vim:
+3. Search Vim help:
+    - "Search vim help for working with channels"
+    - "How do I use vim's quickfix list?"
+    - "Show me help on vim registers"
+
+4. Record macros:
+    - "Record a macro that uppercases the first word and moves down 2 lines"
+    - "Create a macro to duplicate the current line and comment it out"
+    - "Make a macro that finds the next TODO and marks it as DONE"
+
+5. Query about Vim:
    - "How many buffers do I have?"
    - "What buffers are open?"
    - "What is my cursor position?"

@@ -57,4 +57,6 @@ Vim Interaction:
 - **vim_execute**: Execute Ex commands in Vim
 - **exit_vim**: Exit Vim with unsaved changes handling
 - **get_vim_state**: Get current Vim state
+- **vim_search_help**: Search Vim help documentation for topics
+- **vim_record_macro**: Record and execute Vim macros from keystroke sequences
 

@@ -843,6 +843,102 @@ class VimMCPServer {
         }
       }
 
+      if (name === 'vim_record_macro') {
+        if (!this.selectedInstance) {
+          throw new Error('No Vim instance selected. Use select_vim_instance tool first.');
+        }
+
+        const macroSequence = args.macro_sequence;
+        const register = args.register || 'q';
+        const execute = args.execute !== false; // Default true
+
+        if (!macroSequence) {
+          throw new Error('macro_sequence parameter is required');
+        }
+
+        // Validate register name
+        if (!/^[a-z0-9]$/i.test(register)) {
+          throw new Error('Register must be a single letter (a-z) or digit (0-9)');
+        }
+
+        try {
+          const conn = this.vimConnections.get(this.selectedInstance);
+          if (!conn || !conn.socket || conn.socket.destroyed) {
+            throw new Error(`Instance ${this.selectedInstance} not connected`);
+          }
+
+          return new Promise((resolve, reject) => {
+            const requestId = Date.now();
+            const request = JSON.stringify({
+              id: requestId,
+              method: 'record_macro',
+              params: {
+                macro_sequence: macroSequence,
+                register: register,
+                execute: execute
+              }
+            }) + '\n';
+
+            // Set up one-time listener for this specific request
+            const responseHandler = (data) => {
+              try {
+                const lines = data.toString().split('\n');
+                for (const line of lines) {
+                  if (line.trim()) {
+                    const response = JSON.parse(line);
+                    if (response.id === requestId) {
+                      conn.socket.removeListener('data', responseHandler);
+                      if (response.error) {
+                        reject(new Error(response.error.message));
+                      } else {
+                        const result = response.result;
+                        if (result.success) {
+                          let message = `Macro recorded in register "${register}"`;
+                          if (execute) {
+                            message += ' and executed';
+                          }
+                          message += `\nSequence: ${macroSequence}`;
+                          if (result.output) {
+                            message += `\n${result.output}`;
+                          }
+                          resolve({
+                            content: [{
+                              type: 'text',
+                              text: message
+                            }]
+                          });
+                        } else {
+                          resolve({
+                            content: [{
+                              type: 'text',
+                              text: `Failed to record macro: ${result.error || 'Unknown error'}`
+                            }]
+                          });
+                        }
+                      }
+                      return;
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('Error parsing response:', e);
+              }
+            };
+
+            conn.socket.on('data', responseHandler);
+            conn.socket.write(request);
+
+            // Timeout after 2 seconds
+            setTimeout(() => {
+              conn.socket.removeListener('data', responseHandler);
+              reject(new Error('Timeout waiting for macro recording response'));
+            }, 2000);
+          });
+        } catch (error) {
+          throw new Error(`Failed to record macro: ${error.message}`);
+        }
+      }
+
       throw new Error(`Unknown tool: ${name}`);
     });
 
@@ -920,6 +1016,28 @@ class VimMCPServer {
                 }
               },
               required: ['query']
+            }
+          },
+          {
+            name: 'vim_record_macro',
+            description: 'Record a Vim macro from a sequence of keystrokes. Claude will translate natural language descriptions to Vim commands.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                macro_sequence: {
+                  type: 'string',
+                  description: 'The Vim keystroke sequence to record as a macro (e.g., "0gUwj2j" to go to start of line, uppercase word, go down 3 lines)'
+                },
+                register: {
+                  type: 'string',
+                  description: 'Register to save the macro in (default: "q"). Must be a single letter a-z or digit 0-9'
+                },
+                execute: {
+                  type: 'boolean',
+                  description: 'Whether to execute the macro immediately after recording (default: true)'
+                }
+              },
+              required: ['macro_sequence']
             }
           }
         ]

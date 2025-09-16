@@ -33,6 +33,12 @@ function! s:HandleMessage(channel, msg)
         call vim_mcp#utils#DebugLog('Searching help for: ' . l:message.params.query)
         let l:response.result = vim_mcp#search_help#SearchHelp(l:message.params.query)
         call vim_mcp#utils#DebugLog('Help search completed, sending response')
+      elseif l:message.method == 'record_macro'
+        call vim_mcp#utils#DebugLog('Recording macro: ' . l:message.params.macro_sequence)
+        let l:register = get(l:message.params, 'register', 'q')
+        let l:execute = get(l:message.params, 'execute', 1)
+        let l:response.result = vim_mcp#macro#RecordMacro(l:message.params.macro_sequence, l:register, l:execute)
+        call vim_mcp#utils#DebugLog('Macro recording completed, sending response')
       else
         let l:response.error = {
           \ 'code': -32601,
