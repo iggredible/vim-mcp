@@ -263,7 +263,7 @@ exit vim force_exit        # Exit without saving (discard changes)
 GET ME OUTTA HERE          # You're free! Successfully exited Vim (there were no unsaved changes).
 ```
 
-*Note: this is a joke tool because [many people cannot exit Vim](https://stackoverflow.com/questions/11828270/how-do-i-exit-vim)*.
+*Note: this is a joke tool because [many people](https://www.reddit.com/r/vim/comments/gs28gk/21_million_people_visited_the_page_how_do_i_exit/) [have a hard time exiting Vim](https://stackoverflow.com/questions/11828270/how-do-i-exit-vim)*.
 
 ### Vim Commands
 
@@ -275,5 +275,5 @@ The plugin connects automatically when Vim opens. However, you can do these from
 
 ## Contributing
 
-I'm still figuring out how this can be useful. If you have ideas, please feel free to submit a PR!
+I'm still figuring out how to make this to be more useful. If you have ideas, please feel free to submit a PR!
 
