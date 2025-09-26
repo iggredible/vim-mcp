@@ -35,7 +35,8 @@ jobs:
         run: |
           ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
           OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${OS}_${ARCH}.tar.gz" -o mcp-publisher.tar.gz
+          VERSION="1.1.0"
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/download/v${VERSION}/mcp-publisher_${VERSION}_${OS}_${ARCH}.tar.gz" -o mcp-publisher.tar.gz
           tar xzf mcp-publisher.tar.gz
           chmod +x mcp-publisher
 
