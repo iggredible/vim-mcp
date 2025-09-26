@@ -29,13 +29,13 @@ For more, check out the [demo wiki page](https://github.com/iggredible/vim-mcp/w
 
 Ok, I get what it does, but why do we need this?
 
-If you're trying to do basic Vim operation like: typing "split the window in half" (24 keystrokes) vs running :sp / :vs (3 kevstrokes), then vim-mcp won't be of much help. Where vim-cmp shines is when **the # keystrokes is unknown**. When you can only describe what you want to do but do not know exactly what to do. Things like complex regex/ macros/ lookups, help semantic search, etc - it's faster to tell Al what you're trying to accomplish than trial-and-error. I think the word I'm looking for is circumlocution?
+If you're trying to do basic Vim operations like typing "split the window in half" (24 keystrokes) vs running :sp / :vs (3 keystrokes), then you're better off without it. Where vim-mcp shines is when **the number of keystrokes is unknown**; when you can only describe what you want to do but don't know exactly how to do it. Things like complex regex/macros/lookups, help semantic search, etc. - it's faster to tell AI what you're trying to accomplish than trial-and-error. I think the word I'm looking for is circumlocution?
 
 Here's one scenario where it may be useful:
 
-Suppose you want to perform a complex Vim command that otherwise will take a long time to construct. Claude can easily do it if you can describe what you want to do. Maybe you want to substitute "(test foobar)" with square brackets ONLY IF they come after a 3rd level Markdown header. That's not something I can easily cook up in seconds... but Claude can! Without vim-mcp, Claude would probably print out the command, then I'd have to copy that command somehow, and paste that in Vim. 
+Suppose you want to perform a complex Vim command that would otherwise take a long time to construct. Claude can easily do it if you can describe what you want to do. Maybe you want to substitute "(test foobar)" with square brackets ONLY IF they come after a 3rd-level Markdown header. That's not something I can easily cook up in seconds... but Claude can! 
 
-With vim-mcp, in Claude, I can prompt:
+With vim-mcp, I can prompt Claude:
 
 ```
 In README.md, substitute the set of parentheses `(SOME TEXT)` with square brackets `[SOME TEXT]`, where SOME TEXT says "test foobar"; do this if the strings come after a 3rd-level header markdown.
@@ -47,9 +47,9 @@ vim-mcp - vim_execute (MCP)(command: "g/^### /,/^#\\{1,3\\} \\|^$/s/(test foobar
   ⎿  Command executed successfully: g/^### /,/^#\{1,3\} \|^$/s/(test foobar)/[test foobar]/g
 ```
 
-Bonus: the executed commands aree stored in the command history so you can go back and re-execute them or modify them.
+Bonus: the executed commands are stored in the command history so you can go back and re-execute them or modify them.
 
-What if you later decided, "Hey, I actually don't want to substitute them with square brackets `[]`, I want to substitute them with curly brackets `{}` instead! You can just access the command history (`q:`, `:history`, or `:` then press up/down) and then make necessary modifications.
+What if you later decide, "Hey, I actually don't want to substitute them with square brackets `[]`, I want to substitute them with curly brackets `{}` instead!" You can just access the command history (`q:`, `:history`, or `:` then press up/down) and make the necessary modifications.
 
 So I did `:`, then pressed the up arrow a few times until I saw the command that vim-mcp executed, and changed it to `:g/^### /,/^#\{1,3\} \|^$/s/(test foobar)/{test foobar}/g`. Done! 
 
@@ -120,7 +120,7 @@ cd ~/.vim/plugged/vim-mcp/server
 npm install
 ```
 
-`npm install` should also run `chmod +x bin/vim-mcp`
+`npm install` will also run `chmod +x bin/vim-mcp`
 
 2. (Optional) Install globally for system-wide `vim-mcp` command (inside the `/server` directory):
 
@@ -128,7 +128,7 @@ npm install
 npm link
 ```
 
-If this fails due to permissions or whatever reason, you can skip global installation and use the full path in your config.
+If this fails due to permissions or other reasons, you can skip global installation and use the full path in your config.
 
 ### Configure Claude Code
 
@@ -263,6 +263,8 @@ exit vim force_exit        # Exit without saving (discard changes)
 GET ME OUTTA HERE          # You're free! Successfully exited Vim (there were no unsaved changes).
 ```
 
+*Note: this is a joke tool because [many people cannot exit Vim](https://stackoverflow.com/questions/11828270/how-do-i-exit-vim)*.
+
 ### Vim Commands
 
 The plugin connects automatically when Vim opens. However, you can do these from inside Vim:
@@ -270,4 +272,8 @@ The plugin connects automatically when Vim opens. However, you can do these from
 - `:VimMCPConnect` - Manually connect to server
 - `:VimMCPDisconnect` - Disconnect from server
 - `:VimMCPReconnect` - Reconnect to server
+
+## Contributing
+
+I'm still figuring out how this can be useful. If you have ideas, please feel free to submit a PR!
 
